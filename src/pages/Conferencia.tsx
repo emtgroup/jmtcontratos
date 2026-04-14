@@ -68,7 +68,8 @@ export default function Conferencia() {
             <TableBody>
               {filtered.map((r) => (
                 <TableRow key={r.id}>
-                  <TableCell><StatusBadge status={r.status} /></TableCell>
+                  {/* Badge com variação sólida para leitura operacional mais rápida na tela de conferência. */}
+                  <TableCell><StatusBadge status={r.status} variant="solid" /></TableCell>
                   <TableCell className="font-mono text-xs">{r.chaveDeterministica}</TableCell>
                   <TableCell className="font-medium">{r.contrato}</TableCell>
                   <TableCell>{r.nota}</TableCell>
