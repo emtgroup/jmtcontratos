@@ -17,7 +17,7 @@ const statCards = [
 export default function Dashboard() {
   return (
     <div>
-      <PageHeader title="Visão Geral" subtitle="Resumo do sistema de conferência de contratos" />
+      <PageHeader title="Visão Geral" subtitle="Painel consolidado dos resultados exibidos no módulo de conferência (mock)" />
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
@@ -40,7 +40,7 @@ export default function Dashboard() {
         {/* Table */}
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Conferência de Dados Normalizados</CardTitle>
+            <CardTitle className="text-base">Prévia dos Registros da Conferência</CardTitle>
           </CardHeader>
           <CardContent>
             <Table>
@@ -48,7 +48,7 @@ export default function Dashboard() {
                 <TableRow>
                   <TableHead>Status</TableHead>
                   <TableHead>Contrato</TableHead>
-                  <TableHead>Nota</TableHead>
+                  <TableHead>Nota Fiscal</TableHead>
                   <TableHead>Placa</TableHead>
                   {/* Label padronizado para o vocabulário oficial do projeto. */}
                   <TableHead className="text-right">Peso Fiscal</TableHead>

@@ -44,12 +44,14 @@ export const dashboardStats = {
 
 // Mock revisado para representar padrões reais de contrato/nota sem implementar normalização definitiva.
 export const conferenciaRecords: ConferenciaRecord[] = [
-  { id: "1", contrato: "MTP 16876", nota: "25031", placa: "QAZ2B45", pesoBase: 32500, pesoComplementar: 32480, valor: 48750.0, status: "vinculado", origem: "GRL053", chaveDeterministica: "MTP16876|25031" },
-  { id: "2", contrato: "AFX 33610-33316", nota: "12345", placa: "RTE4C12", pesoBase: 28900, pesoComplementar: 28900, valor: 43350.0, status: "vinculado", origem: "Inpasa", chaveDeterministica: "AFX3361033316|12345" },
-  { id: "3", contrato: "33044", nota: "000456", placa: "KLM9D88", pesoBase: 31200, pesoComplementar: null, valor: 46800.0, status: "aguardando", origem: "GRL053", chaveDeterministica: "33044|000456" },
-  { id: "4", contrato: "17290-1", nota: "987654", placa: "HJK1A09", pesoBase: 29800, pesoComplementar: 30500, valor: 44700.0, status: "divergente", origem: "Bunge", chaveDeterministica: "172901|987654" },
-  { id: "5", contrato: "BXA 55421", nota: "451299", placa: "PLM5F77", pesoBase: 33100, pesoComplementar: 33050, valor: 49650.0, status: "vinculado", origem: "FS", chaveDeterministica: "BXA55421|451299" },
-  { id: "6", contrato: "78102", nota: "804512", placa: "NVB3G26", pesoBase: 27600, pesoComplementar: 27650, valor: 41400.0, status: "ambiguo", origem: "Inpasa", chaveDeterministica: "78102|804512" },
+  { id: "1", contrato: "MTP 16876", nota: "25031", placa: "QAZ2B45", pesoBase: 32500, pesoComplementar: 32480, valor: 48750.0, status: "vinculado", origem: "Base GRL053 + Layout Inpasa", chaveDeterministica: "16876|25031" },
+  // Ajuste visual de mock para ensinar a regra esperada de chave sem aplicar motor real de normalização.
+  { id: "2", contrato: "AFX 33610-33316", nota: "12345", placa: "RTE4C12", pesoBase: 28900, pesoComplementar: 28900, valor: 43350.0, status: "vinculado", origem: "Base GRL053 + Layout Inpasa", chaveDeterministica: "33610|12345" },
+  { id: "3", contrato: "33044", nota: "000456", placa: "KLM9D88", pesoBase: 31200, pesoComplementar: null, valor: 46800.0, status: "aguardando", origem: "Base GRL053 (sem complementar)", chaveDeterministica: "33044|000456" },
+  // Ajuste visual de mock para evitar que o sufixo após hífen pareça participar da chave final.
+  { id: "4", contrato: "17290-1", nota: "987654", placa: "HJK1A09", pesoBase: 29800, pesoComplementar: 30500, valor: 44700.0, status: "divergente", origem: "Base GRL053 + Layout Bunge", chaveDeterministica: "17290|987654" },
+  { id: "5", contrato: "BXA 55421", nota: "451299", placa: "PLM5F77", pesoBase: 33100, pesoComplementar: 33050, valor: 49650.0, status: "vinculado", origem: "Base GRL053 + Layout FS", chaveDeterministica: "55421|451299" },
+  { id: "6", contrato: "78102", nota: "804512", placa: "NVB3G26", pesoBase: 27600, pesoComplementar: 27650, valor: 41400.0, status: "ambiguo", origem: "Base GRL053 + Layout Inpasa", chaveDeterministica: "78102|804512" },
 ];
 
 export const layoutBaseColumns: LayoutColumn[] = [
@@ -66,14 +68,16 @@ export const layoutBaseColumns: LayoutColumn[] = [
 export const layoutsComplementares: LayoutComplementar[] = [
   { id: "1", nome: "Inpasa - Recebimento", colunasMapeadas: 7 },
   { id: "2", nome: "FS - Controle de Carga", colunasMapeadas: 6 },
+  { id: "3", nome: "Bunge - Recebimento Rodoviário", colunasMapeadas: 6 },
 ];
 
 export const importResumoMock = {
   // Resumo continua 100% mock, apenas revisado para refletir operação visual mais realista.
-  totalLido: 186,
-  inseridos: 141,
+  totalBaseLida: 126,
+  totalComplementarLido: 60,
+  combinados: 141,
   atualizados: 29,
-  ignorados: 16,
+  pendentesLayout: 16,
   vinculados: 112,
   aguardando: 38,
   divergentes: 22,

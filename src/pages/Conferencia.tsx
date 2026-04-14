@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Download } from "lucide-react";
+import { Search, Download } from "lucide-react";
 
 const statusFilters: (StatusType | "todos")[] = ["todos", "vinculado", "aguardando", "divergente", "ambiguo"];
 
@@ -23,9 +23,16 @@ export default function Conferencia() {
 
   return (
     <div>
-      <PageHeader title="Módulo de Conferência" subtitle="Análise de vinculação entre base e relatórios complementares">
+      <PageHeader title="Módulo de Conferência" subtitle="Visualização do resultado da conferência entre Base GRL053 e layouts complementares (mock)">
         <Button variant="outline" size="sm"><Download className="h-4 w-4 mr-1" /> Exportar</Button>
       </PageHeader>
+
+      <Card className="mb-4 border-dashed">
+        <CardContent className="py-3 text-xs text-muted-foreground">
+          {/* Observação explícita para reforçar que esta tela exibe resultado mockado e não executa decisão de negócio. */}
+          A conferência abaixo é apenas uma exibição de resultado em modo mock. O status é exibido para análise operacional e não é decidido nesta tela.
+        </CardContent>
+      </Card>
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -87,11 +94,14 @@ export default function Conferencia() {
       <div className="flex items-center gap-4 mt-4 text-xs text-muted-foreground">
         <div className="flex items-center gap-1.5">
           <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--status-vinculado))]" />
-          Vínculo Direto
+          Vinculado (resultado exibido)
         </div>
         <div className="flex items-center gap-1.5">
           <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--status-ambiguo))]" />
-          Diagnóstico Secundário
+          Ambíguo (requer revisão operacional)
+        </div>
+        <div>
+          Peso Fiscal e Peso Líquido são informativos nesta etapa mockada.
         </div>
       </div>
     </div>
