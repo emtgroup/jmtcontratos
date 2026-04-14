@@ -63,20 +63,25 @@ export const conferenciaRecords: ConferenciaRecord[] = [
 ];
 
 export const layoutBaseColumns: LayoutColumn[] = [
-  // Tipos de coluna ajustados para refletir o conceito de negócio usado pelo sistema.
+  // Mock da configuração base alinhado à lista fechada de tipos (preparação para contrato com backend).
   { id: "1", colunaExcel: "A", apelido: "Contrato Vinculado", tipo: "Contrato vinculado", analise: true },
   { id: "2", colunaExcel: "B", apelido: "Nota Fiscal", tipo: "Nota fiscal", analise: true },
   { id: "3", colunaExcel: "C", apelido: "Placa", tipo: "Placa", analise: false },
   { id: "4", colunaExcel: "D", apelido: "Peso Fiscal", tipo: "Peso fiscal", analise: true },
   { id: "5", colunaExcel: "E", apelido: "Peso Líquido", tipo: "Peso líquido", analise: true },
-  { id: "6", colunaExcel: "F", apelido: "Clifor", tipo: "Clifor", analise: false },
-  { id: "7", colunaExcel: "G", apelido: "Data", tipo: "Data", analise: false },
+  { id: "6", colunaExcel: "F", apelido: "Data da Nota", tipo: "Data da nota", analise: false },
+  { id: "7", colunaExcel: "G", apelido: "Hora", tipo: "Hora", analise: false },
+  { id: "8", colunaExcel: "H", apelido: "Produto", tipo: "Produto", analise: false },
+  { id: "9", colunaExcel: "I", apelido: "Observação NF", tipo: "Observação NF", analise: false },
+  { id: "10", colunaExcel: "J", apelido: "Chave de Acesso", tipo: "Chave de acesso", analise: false },
+  { id: "11", colunaExcel: "K", apelido: "Clifor", tipo: "Clifor", analise: false },
 ];
 
 export const layoutsComplementares: LayoutComplementar[] = [
-  { id: "1", nome: "Inpasa - Recebimento", colunasMapeadas: 7 },
-  { id: "2", nome: "FS - Controle de Carga", colunasMapeadas: 6 },
-  { id: "3", nome: "Bunge - Recebimento Rodoviário", colunasMapeadas: 6 },
+  // Quantidade revisada para ficar compatível com o exemplo expandido de tipos configuráveis.
+  { id: "1", nome: "Inpasa - Recebimento", colunasMapeadas: 11 },
+  { id: "2", nome: "FS - Controle de Carga", colunasMapeadas: 10 },
+  { id: "3", nome: "Bunge - Recebimento Rodoviário", colunasMapeadas: 9 },
 ];
 
 export const importResumoMock = {
