@@ -57,7 +57,8 @@ export default function Dashboard() {
               <TableBody>
                 {conferenciaRecords.map((r) => (
                   <TableRow key={r.id}>
-                    <TableCell><StatusBadge status={r.status} /></TableCell>
+                    {/* Reaproveita o mesmo padrão visual oficial da Conferência para manter consistência de badges. */}
+                    <TableCell><StatusBadge status={r.status} variant="solid" /></TableCell>
                     <TableCell className="font-medium">{r.contrato}</TableCell>
                     <TableCell>{r.nota}</TableCell>
                     <TableCell>{r.placa}</TableCell>
