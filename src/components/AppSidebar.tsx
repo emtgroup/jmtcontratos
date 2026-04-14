@@ -1,9 +1,9 @@
 import { LayoutDashboard, Upload, FileSearch, Settings } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -13,6 +13,7 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { systemInfo } from "@/config/system-info";
 
 const menuItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -24,7 +25,8 @@ const menuItems = [
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
+  // Quando recolhida, exibimos apenas a versão reduzida para preservar espaço visual.
+  const compactVersion = systemInfo.version.split(".").slice(0, 2).join(".");
 
   return (
     <Sidebar collapsible="icon">
@@ -71,6 +73,19 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter className="border-t border-sidebar-border px-3 py-2">
+        <div className="text-[10px] leading-tight text-muted-foreground">
+          {!collapsed ? (
+            <>
+              {/* Bloco discreto para facilitar identificação rápida da versão em uso. */}
+              <p className="truncate">Versão {systemInfo.version}</p>
+              <p className="truncate">Atualizado em {systemInfo.lastUpdated}</p>
+            </>
+          ) : (
+            <p className="text-center">{compactVersion}</p>
+          )}
+        </div>
+      </SidebarFooter>
     </Sidebar>
   );
 }
