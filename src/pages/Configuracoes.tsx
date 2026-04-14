@@ -10,18 +10,27 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { layoutBaseColumns, layoutsComplementares, LayoutColumn } from "@/data/mock";
 import { Plus, Save, Trash2, Info } from "lucide-react";
 
-const tipoOptions = ["texto", "numero", "moeda", "data", "booleano"];
+const tipoColunaOptions = [
+  "Contrato vinculado",
+  "Nota fiscal",
+  "Placa",
+  "Peso fiscal",
+  "Peso líquido",
+  "Data",
+  "Clifor",
+  "Outros",
+];
 
 export default function Configuracoes() {
   const [baseColumns, setBaseColumns] = useState<LayoutColumn[]>(layoutBaseColumns);
   const [showNewLayout, setShowNewLayout] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutCols, setNewLayoutCols] = useState<LayoutColumn[]>([
-    { id: "n1", colunaExcel: "", apelido: "", tipo: "texto", analise: true },
+    { id: "n1", colunaExcel: "", apelido: "", tipo: "Contrato vinculado", analise: true },
   ]);
 
   const addBaseColumn = () => {
-    setBaseColumns([...baseColumns, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "texto", analise: false }]);
+    setBaseColumns([...baseColumns, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "Outros", analise: false }]);
   };
 
   const removeBaseColumn = (id: string) => {
@@ -29,7 +38,7 @@ export default function Configuracoes() {
   };
 
   const addNewLayoutCol = () => {
-    setNewLayoutCols([...newLayoutCols, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "texto", analise: true }]);
+    setNewLayoutCols([...newLayoutCols, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "Outros", analise: true }]);
   };
 
   return (
@@ -59,8 +68,23 @@ export default function Configuracoes() {
             <CardContent>
               <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
-                {/* Mensagem revisada para refletir os campos oficiais, mantendo comportamento somente mock. */}
-                <span>Defina Nome da Coluna Excel, Apelido, Tipo da Coluna e se Participa da Análise. Esta configuração permanece mockada nesta fase.</span>
+                <span>Defina o significado de cada coluna do arquivo; o sistema usará esse mapeamento para interpretar os dados (interface mockada, sem motor real de importação).</span>
+              </div>
+              {/* Preparação visual para futura lógica de leitura, mantendo a tela em modo mock. */}
+              <div className="rounded-md border p-3 mb-4 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Configure de qual linha o sistema começa a ler o cabeçalho e os dados do arquivo.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Linha inicial do cabeçalho</label>
+                    <Input type="number" defaultValue={2} className="h-8" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Linha inicial dos dados</label>
+                    <Input type="number" defaultValue={3} className="h-8" />
+                  </div>
+                </div>
               </div>
               <Table>
                 <TableHeader>
@@ -68,7 +92,7 @@ export default function Configuracoes() {
                     <TableHead>Nome da Coluna Excel</TableHead>
                     <TableHead>Apelido</TableHead>
                     <TableHead>Tipo da Coluna</TableHead>
-                    <TableHead className="text-center">Participa da Análise</TableHead>
+                    <TableHead className="text-center">Análise</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -83,12 +107,13 @@ export default function Configuracoes() {
                       </TableCell>
                       <TableCell>
                         <Select defaultValue={col.tipo}>
-                          <SelectTrigger className="h-8 w-28">
+                          <SelectTrigger className="h-8 w-44">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {tipoOptions.map((t) => (
-                              <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+                            {/* Tipo da coluna orientado a negócio para refletir o conceito do sistema. */}
+                            {tipoColunaOptions.map((t) => (
+                              <SelectItem key={t} value={t}>{t}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -132,15 +157,29 @@ export default function Configuracoes() {
 
               {showNewLayout && (
                 <div className="space-y-4 border rounded-lg p-4">
+                  <div className="rounded-md border bg-muted/30 p-3 flex items-start gap-2 text-xs text-muted-foreground">
+                    <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                    <span>Mapeie o significado das colunas para interpretação do arquivo e configure a linha inicial de leitura (mock visual, sem processamento real).</span>
+                  </div>
                   <div className="flex items-center gap-3">
                     <label className="text-sm font-medium">Nome do Layout Externo:</label>
                     <Input value={newLayoutName} onChange={(e) => setNewLayoutName(e.target.value)} placeholder="Ex: Bunge - Recebimento Rodoviário" className="h-8 max-w-xs" />
                   </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Linha inicial do cabeçalho</label>
+                      <Input type="number" defaultValue={2} className="h-8" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Linha inicial dos dados</label>
+                      <Input type="number" defaultValue={3} className="h-8" />
+                    </div>
+                  </div>
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Nome da Coluna Excel</TableHead>
-                        <TableHead>Apelido no Sistema</TableHead>
+                        <TableHead>Coluna Excel</TableHead>
+                        <TableHead>Apelido</TableHead>
                         <TableHead>Tipo da Coluna</TableHead>
                         <TableHead className="w-12"></TableHead>
                       </TableRow>
@@ -151,11 +190,11 @@ export default function Configuracoes() {
                           <TableCell><Input className="h-8 w-20" placeholder="Ex: C" /></TableCell>
                           <TableCell><Input className="h-8" placeholder="Ex: Nota Fiscal" /></TableCell>
                           <TableCell>
-                            <Select defaultValue="texto">
-                              <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>
+                            <Select defaultValue={col.tipo}>
+                              <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
                               <SelectContent>
-                                {tipoOptions.map((t) => (
-                                  <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+                                {tipoColunaOptions.map((t) => (
+                                  <SelectItem key={t} value={t}>{t}</SelectItem>
                                 ))}
                               </SelectContent>
                             </Select>
