@@ -57,6 +57,12 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        status: {
+          vinculado: "hsl(var(--status-vinculado))",
+          aguardando: "hsl(var(--status-aguardando))",
+          divergente: "hsl(var(--status-divergente))",
+          ambiguo: "hsl(var(--status-ambiguo))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
