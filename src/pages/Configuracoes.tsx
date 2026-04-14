@@ -34,7 +34,7 @@ export default function Configuracoes() {
 
   return (
     <div>
-      <PageHeader title="Configurações" subtitle="Gerencie os layouts de mapeamento de colunas" />
+      <PageHeader title="Configurações" subtitle="Gerencie o mapeamento de colunas da conferência (base e complementares)" />
 
       <Tabs defaultValue="base">
         <TabsList className="mb-4">
@@ -59,7 +59,8 @@ export default function Configuracoes() {
             <CardContent>
               <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>Defina o mapeamento entre as colunas do arquivo Excel e os campos lógicos do sistema. Colunas marcadas para análise serão usadas na conferência.</span>
+                {/* Mensagem revisada para refletir os campos oficiais, mantendo comportamento somente mock. */}
+                <span>Defina o mapeamento entre as colunas do arquivo e campos como Contrato Vinculado, Nota Fiscal, Placa, Peso Fiscal, Peso Líquido, Data e Clifor.</span>
               </div>
               <Table>
                 <TableHeader>
@@ -129,7 +130,7 @@ export default function Configuracoes() {
                 <div className="space-y-4 border rounded-lg p-4">
                   <div className="flex items-center gap-3">
                     <label className="text-sm font-medium">Nome do Layout:</label>
-                    <Input value={newLayoutName} onChange={(e) => setNewLayoutName(e.target.value)} placeholder="Ex: FS Bioenergia" className="h-8 max-w-xs" />
+                    <Input value={newLayoutName} onChange={(e) => setNewLayoutName(e.target.value)} placeholder="Ex: Bunge - Recebimento" className="h-8 max-w-xs" />
                   </div>
                   <Table>
                     <TableHeader>
@@ -144,7 +145,7 @@ export default function Configuracoes() {
                       {newLayoutCols.map((col) => (
                         <TableRow key={col.id}>
                           <TableCell><Input className="h-8 w-20" /></TableCell>
-                          <TableCell><Input className="h-8" placeholder="Campo lógico" /></TableCell>
+                          <TableCell><Input className="h-8" placeholder="Ex: Nota Fiscal" /></TableCell>
                           <TableCell>
                             <Select defaultValue="texto">
                               <SelectTrigger className="h-8 w-28"><SelectValue /></SelectTrigger>

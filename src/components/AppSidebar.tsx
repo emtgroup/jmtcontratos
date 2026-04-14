@@ -32,17 +32,18 @@ export function AppSidebar() {
         {!collapsed && (
           <div className="flex items-center gap-2">
             <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">S</span>
+              {/* Monograma curto para manter a identidade visual sem alterar layout. */}
+              <span className="text-primary-foreground font-bold text-sm">JM</span>
             </div>
             <div>
-              <p className="text-sm font-bold text-sidebar-foreground">SICON</p>
-              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Contabilidade</p>
+              <p className="text-sm font-bold text-sidebar-foreground">JM Contabilidade</p>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Conferência de Contratos</p>
             </div>
           </div>
         )}
         {collapsed && (
           <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center mx-auto">
-            <span className="text-primary-foreground font-bold text-sm">S</span>
+            <span className="text-primary-foreground font-bold text-sm">JM</span>
           </div>
         )}
       </SidebarHeader>

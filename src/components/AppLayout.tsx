@@ -15,9 +15,8 @@ export function AppLayout() {
             <div className="flex items-center gap-3">
               <SidebarTrigger className="text-[hsl(var(--header-foreground))] hover:bg-white/10" />
               <div className="hidden sm:flex items-center gap-2">
-                <span className="font-bold text-sm tracking-wide">SICON</span>
-                <span className="text-xs opacity-70">|</span>
-                <span className="text-xs opacity-70 uppercase tracking-widest">Contabilidade</span>
+                {/* Branding ajustado para refletir o nome real do projeto nesta fase mock. */}
+                <span className="font-bold text-sm tracking-wide">JM Contabilidade</span>
               </div>
             </div>
             <div className="flex items-center gap-3">

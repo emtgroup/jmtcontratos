@@ -25,7 +25,7 @@ export default function Importacao() {
 
   return (
     <div>
-      <PageHeader title="Importação de Dados" subtitle="Importe arquivos da base principal ou relatórios complementares" />
+      <PageHeader title="Importação de Dados" subtitle="Importe arquivos da base GRL053 e dos layouts complementares em modo mock" />
 
       <div className="grid md:grid-cols-2 gap-6 mb-6">
         {/* Base */}
@@ -46,10 +46,11 @@ export default function Importacao() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Layout</label>
+              {/* Texto de apoio ajustado para deixar claro o contexto de mapeamento complementar. */}
+              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Layout complementar</label>
               <Select>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione o layout" />
+                  <SelectValue placeholder="Selecione o layout de origem" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="fs">FS Bioenergia</SelectItem>
