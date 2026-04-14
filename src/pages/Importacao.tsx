@@ -9,14 +9,16 @@ import { CheckCircle } from "lucide-react";
 
 export default function Importacao() {
   const [showResumo, setShowResumo] = useState(false);
+  const [layoutSelecionado, setLayoutSelecionado] = useState("");
 
   const handleImport = () => setShowResumo(true);
 
   const resumoItems = [
-    { label: "Total Lido", value: importResumoMock.totalLido },
-    { label: "Inseridos", value: importResumoMock.inseridos },
+    { label: "Base Lida (GRL053)", value: importResumoMock.totalBaseLida },
+    { label: "Complementar Lido", value: importResumoMock.totalComplementarLido },
+    { label: "Registros Combinados", value: importResumoMock.combinados },
     { label: "Atualizados", value: importResumoMock.atualizados },
-    { label: "Ignorados", value: importResumoMock.ignorados },
+    { label: "Pendentes de Layout", value: importResumoMock.pendentesLayout },
     { label: "Vinculados", value: importResumoMock.vinculados },
     { label: "Aguardando", value: importResumoMock.aguardando },
     { label: "Divergentes", value: importResumoMock.divergentes },
@@ -25,7 +27,7 @@ export default function Importacao() {
 
   return (
     <div>
-      <PageHeader title="Importação de Dados" subtitle="Importe arquivos da base GRL053 e dos layouts complementares em modo mock" />
+      <PageHeader title="Importação de Dados" subtitle="Fluxo operacional mockado para Base GRL053 e relatórios complementares" />
 
       <div className="grid md:grid-cols-2 gap-6 mb-6">
         {/* Base */}
@@ -34,6 +36,9 @@ export default function Importacao() {
             <CardTitle className="text-base">Base GRL053</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Etapa 1: carregue o relatório base oficial (GRL053). Este envio permanece 100% mock.
+            </p>
             <UploadArea title="Arquivo da Base Principal" subtitle="Formato: .xlsx, .csv" />
             <Button className="w-full" onClick={handleImport}>Importar Base</Button>
           </CardContent>
@@ -45,22 +50,31 @@ export default function Importacao() {
             <CardTitle className="text-base">Relatório Complementar</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Etapa 2: selecione o layout complementar e depois anexe o relatório externo correspondente (mock).
+            </p>
             <div>
               {/* Texto de apoio ajustado para deixar claro o contexto de mapeamento complementar. */}
               <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Layout complementar</label>
-              <Select>
+              <Select value={layoutSelecionado} onValueChange={setLayoutSelecionado}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o layout de origem" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fs">FS Bioenergia</SelectItem>
-                  <SelectItem value="bunge">Bunge</SelectItem>
-                  <SelectItem value="inpasa">Inpasa</SelectItem>
+                  <SelectItem value="fs">FS - Controle de Carga</SelectItem>
+                  <SelectItem value="bunge">Bunge - Recebimento</SelectItem>
+                  <SelectItem value="inpasa">Inpasa - Recebimento</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-            <UploadArea title="Arquivo Complementar" subtitle="Formato: .xlsx, .csv" />
-            <Button className="w-full" variant="secondary" onClick={handleImport}>Importar Complementar</Button>
+            <UploadArea
+              title="Arquivo Complementar"
+              subtitle={layoutSelecionado ? "Formato: .xlsx, .csv" : "Selecione um layout para habilitar este envio mockado"}
+            />
+            {/* Dependência visual entre layout e envio complementar; sem validação real de importação nesta fase. */}
+            <Button className="w-full" variant="secondary" onClick={handleImport} disabled={!layoutSelecionado}>
+              Importar Complementar
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -71,7 +85,7 @@ export default function Importacao() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-[hsl(var(--status-vinculado))]" />
-              Importação Concluída (Mock)
+              Resumo da Importação (Mock)
             </CardTitle>
           </CardHeader>
           <CardContent>
