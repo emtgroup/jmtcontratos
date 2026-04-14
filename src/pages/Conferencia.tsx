@@ -6,7 +6,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Search, Download } from "lucide-react";
 
 const statusFilters: (StatusType | "todos")[] = ["todos", "vinculado", "aguardando", "divergente", "ambiguo"];
@@ -63,7 +62,7 @@ export default function Conferencia() {
                 <TableHead className="text-right">Peso Fiscal</TableHead>
                 <TableHead className="text-right">Peso Líquido</TableHead>
                 <TableHead className="text-right">Valor (R$)</TableHead>
-                <TableHead>Origem</TableHead>
+                <TableHead>Motivo</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -77,7 +76,8 @@ export default function Conferencia() {
                   <TableCell className="text-right">{r.pesoBase.toLocaleString("pt-BR")}</TableCell>
                   <TableCell className="text-right">{r.pesoComplementar?.toLocaleString("pt-BR") ?? "—"}</TableCell>
                   <TableCell className="text-right">{r.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
-                  <TableCell><Badge variant="outline" className="text-xs">{r.origem}</Badge></TableCell>
+                  {/* Motivo é exibido de forma textual para clareza operacional sem alterar regras/filtros. */}
+                  <TableCell>{r.motivo}</TableCell>
                 </TableRow>
               ))}
               {filtered.length === 0 && (
