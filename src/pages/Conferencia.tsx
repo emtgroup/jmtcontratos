@@ -151,11 +151,12 @@ export default function Conferencia() {
               <section className="space-y-3">
                 <h3 className="font-semibold">Dados da NF</h3>
                 <div className="grid grid-cols-1 gap-2">
-                  <p><span className="text-muted-foreground">Data da nota fiscal:</span> {selectedRecord.dataNF}</p>
+                  {/* Rótulos espelham os tipos configuráveis para reforçar a relação configuração -> exibição. */}
+                  <p><span className="text-muted-foreground">Data da nota:</span> {selectedRecord.dataNF}</p>
                   <p><span className="text-muted-foreground">Hora:</span> {selectedRecord.horaNF ?? "—"}</p>
                   <p><span className="text-muted-foreground">Produto:</span> {selectedRecord.produto}</p>
                   <p><span className="text-muted-foreground">Placa:</span> {selectedRecord.placa}</p>
-                  <p><span className="text-muted-foreground">Observação da NF:</span> {selectedRecord.observacaoNF}</p>
+                  <p><span className="text-muted-foreground">Observação NF:</span> {selectedRecord.observacaoNF}</p>
                 </div>
               </section>
 

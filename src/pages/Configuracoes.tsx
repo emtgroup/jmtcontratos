@@ -18,29 +18,37 @@ const tipoColunaOptions = [
   "Placa",
   "Peso fiscal",
   "Peso líquido",
-  "Data",
+  "Data da nota",
+  "Hora",
+  "Produto",
+  "Observação NF",
+  "Chave de acesso",
   "Clifor",
-  "Outros",
 ];
 
 const tipoSemantica: Record<string, { categoria: string; destaque?: string }> = {
-  "Contrato vinculado": { categoria: "Base de identificação", destaque: "Campo principal" },
-  "Nota fiscal": { categoria: "Base de identificação", destaque: "Campo principal" },
-  Placa: { categoria: "Apoio para diagnóstico" },
-  "Peso fiscal": { categoria: "Informativo/analítico" },
-  "Peso líquido": { categoria: "Informativo/analítico" },
-  Data: { categoria: "Informativo/analítico" },
-  Clifor: { categoria: "Informativo/analítico" },
-  Outros: { categoria: "Coluna adicional" },
+  // Semântica fechada para preparar integração com backend sem depender de tipo genérico.
+  "Contrato vinculado": { categoria: "Identificação principal", destaque: "Campo principal" },
+  "Nota fiscal": { categoria: "Identificação principal", destaque: "Campo principal" },
+  Placa: { categoria: "Apoio" },
+  "Peso fiscal": { categoria: "Informativo" },
+  "Peso líquido": { categoria: "Informativo" },
+  "Data da nota": { categoria: "Detalhe / exibição" },
+  Hora: { categoria: "Detalhe / exibição" },
+  Produto: { categoria: "Detalhe / exibição" },
+  "Observação NF": { categoria: "Detalhe / exibição" },
+  "Chave de acesso": { categoria: "Detalhe / exibição" },
+  Clifor: { categoria: "Detalhe / exibição" },
 };
 
-const getTipoSemantica = (tipo: string) => tipoSemantica[tipo] ?? { categoria: "Coluna adicional" };
+const getTipoSemantica = (tipo: string) => tipoSemantica[tipo] ?? { categoria: "Detalhe / exibição" };
 
 // Textos curtos de apoio para reduzir dúvidas no mapeamento das colunas.
 const columnHelpText = {
   nomeColunaExcel: "Informe a letra ou nome da coluna conforme aparece no arquivo (ex: A, B, C ou Nome da coluna no Excel).",
   apelido: "Nome interno utilizado pelo sistema para identificar a coluna. Não precisa ser igual ao Excel.",
-  tipoColuna: "Define o significado da coluna no sistema. Ex: Contrato vinculado e Nota fiscal são usados para identificar os registros.",
+  // Texto orientado à nova taxonomia de tipos para reduzir ambiguidades no cadastro.
+  tipoColuna: "Define o significado da coluna no sistema: identificação principal (Contrato vinculado/Nota fiscal), apoio (Placa), informativos (Peso fiscal/Peso líquido) e detalhe/exibição (Data da nota, Hora, Produto, Observação NF, Chave de acesso e Clifor).",
   analise: "Indica se essa coluna será considerada na conferência e comparação dos dados.",
 };
 
@@ -69,7 +77,8 @@ export default function Configuracoes() {
   ]);
 
   const addBaseColumn = () => {
-    setBaseColumns([...baseColumns, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "Outros", analise: false }]);
+    // Novo item já nasce com tipo permitido da lista final para manter coerência do mock com backend futuro.
+    setBaseColumns([...baseColumns, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "Data da nota", analise: false }]);
   };
 
   const removeBaseColumn = (id: string) => {
@@ -81,7 +90,8 @@ export default function Configuracoes() {
   };
 
   const addNewLayoutCol = () => {
-    setNewLayoutCols([...newLayoutCols, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "Outros", analise: true }]);
+    // Evita fallback genérico: todo novo campo complementar começa em tipo específico.
+    setNewLayoutCols([...newLayoutCols, { id: String(Date.now()), colunaExcel: "", apelido: "", tipo: "Data da nota", analise: true }]);
   };
 
   const updateNewLayoutColTipo = (id: string, tipo: string) => {
@@ -116,7 +126,7 @@ export default function Configuracoes() {
               <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>
-                  O usuário define o significado das colunas; o sistema usa esse mapeamento na leitura e conferência. Contrato vinculado e Nota fiscal são base de identificação, Placa é apoio de análise, Peso fiscal/Peso líquido/Data/Clifor são informativos e Outros cobre colunas adicionais.
+                  O usuário define o significado das colunas; o sistema usa esse mapeamento na leitura e conferência. Contrato vinculado e Nota fiscal são identificação principal, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor compõem os campos de detalhe e exibição.
                 </span>
               </div>
               {/* Preparação visual para futura lógica de leitura, mantendo a tela em modo mock. */}
@@ -212,7 +222,7 @@ export default function Configuracoes() {
               <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>
-                  O mapeamento complementar segue a mesma semântica da base: Contrato vinculado e Nota fiscal identificam registros, Placa apoia diagnóstico, Peso fiscal/Peso líquido/Data/Clifor são informativos e Outros cobre colunas sem papel principal.
+                  O mapeamento complementar segue a mesma semântica da base: Contrato vinculado e Nota fiscal identificam registros, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor são campos de detalhe e exibição.
                 </span>
               </div>
               {layoutsComplementares.length === 0 && !showNewLayout && (
