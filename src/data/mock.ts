@@ -53,14 +53,14 @@ export const conferenciaRecords: ConferenciaRecord[] = [
 ];
 
 export const layoutBaseColumns: LayoutColumn[] = [
-  // Labels de campos alinhados ao vocabulário oficial do projeto nesta fase de interface mockada.
-  { id: "1", colunaExcel: "A", apelido: "Contrato Vinculado", tipo: "texto", analise: true },
-  { id: "2", colunaExcel: "B", apelido: "Nota Fiscal", tipo: "texto", analise: true },
-  { id: "3", colunaExcel: "C", apelido: "Placa", tipo: "texto", analise: false },
-  { id: "4", colunaExcel: "D", apelido: "Peso Fiscal", tipo: "numero", analise: true },
-  { id: "5", colunaExcel: "E", apelido: "Peso Líquido", tipo: "numero", analise: true },
-  { id: "6", colunaExcel: "F", apelido: "Clifor", tipo: "texto", analise: false },
-  { id: "7", colunaExcel: "G", apelido: "Data", tipo: "data", analise: false },
+  // Tipos de coluna ajustados para refletir o conceito de negócio usado pelo sistema.
+  { id: "1", colunaExcel: "A", apelido: "Contrato Vinculado", tipo: "Contrato vinculado", analise: true },
+  { id: "2", colunaExcel: "B", apelido: "Nota Fiscal", tipo: "Nota fiscal", analise: true },
+  { id: "3", colunaExcel: "C", apelido: "Placa", tipo: "Placa", analise: false },
+  { id: "4", colunaExcel: "D", apelido: "Peso Fiscal", tipo: "Peso fiscal", analise: true },
+  { id: "5", colunaExcel: "E", apelido: "Peso Líquido", tipo: "Peso líquido", analise: true },
+  { id: "6", colunaExcel: "F", apelido: "Clifor", tipo: "Clifor", analise: false },
+  { id: "7", colunaExcel: "G", apelido: "Data", tipo: "Data", analise: false },
 ];
 
 export const layoutsComplementares: LayoutComplementar[] = [
