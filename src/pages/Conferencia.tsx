@@ -52,8 +52,9 @@ export default function Conferencia() {
                 <TableHead>Contrato</TableHead>
                 <TableHead>Nota Fiscal</TableHead>
                 <TableHead>Placa</TableHead>
-                <TableHead className="text-right">Peso Base</TableHead>
-                <TableHead className="text-right">Peso Compl.</TableHead>
+                {/* Nomenclaturas padronizadas para aderência ao contexto real do projeto. */}
+                <TableHead className="text-right">Peso Fiscal</TableHead>
+                <TableHead className="text-right">Peso Líquido</TableHead>
                 <TableHead className="text-right">Valor (R$)</TableHead>
                 <TableHead>Origem</TableHead>
               </TableRow>

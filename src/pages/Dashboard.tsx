@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/StatusBadge";
-import { dashboardStats, conferenciaRecords, chartData } from "@/data/mock";
+import { dashboardStats, conferenciaRecords, chartData, layoutsComplementares } from "@/data/mock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { CheckCircle, Clock, AlertTriangle, HelpCircle, Database } from "lucide-react";
@@ -50,7 +50,8 @@ export default function Dashboard() {
                   <TableHead>Contrato</TableHead>
                   <TableHead>Nota</TableHead>
                   <TableHead>Placa</TableHead>
-                  <TableHead className="text-right">Peso Base</TableHead>
+                  {/* Label padronizado para o vocabulário oficial do projeto. */}
+                  <TableHead className="text-right">Peso Fiscal</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -111,7 +112,8 @@ export default function Dashboard() {
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Layouts complementares</span>
-                <span className="font-medium">0</span>
+                {/* Indicador sincronizado com os mocks atuais de configuração/layout. */}
+                <span className="font-medium">{layoutsComplementares.length}</span>
               </div>
             </CardContent>
           </Card>
