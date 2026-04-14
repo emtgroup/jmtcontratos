@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { layoutBaseColumns, layoutsComplementares, LayoutColumn } from "@/data/mock";
-import { Plus, Save, Trash2, Info } from "lucide-react";
+import { Plus, Save, Trash2, Info, HelpCircle } from "lucide-react";
 
 const tipoColunaOptions = [
   "Contrato vinculado",
@@ -34,6 +35,30 @@ const tipoSemantica: Record<string, { categoria: string; destaque?: string }> = 
 };
 
 const getTipoSemantica = (tipo: string) => tipoSemantica[tipo] ?? { categoria: "Coluna adicional" };
+
+// Textos curtos de apoio para reduzir dúvidas no mapeamento das colunas.
+const columnHelpText = {
+  nomeColunaExcel: "Informe a letra ou nome da coluna conforme aparece no arquivo (ex: A, B, C ou Nome da coluna no Excel).",
+  apelido: "Nome interno utilizado pelo sistema para identificar a coluna. Não precisa ser igual ao Excel.",
+  tipoColuna: "Define o significado da coluna no sistema. Ex: Contrato vinculado e Nota fiscal são usados para identificar os registros.",
+  analise: "Indica se essa coluna será considerada na conferência e comparação dos dados.",
+};
+
+const renderHeaderWithHelp = (title: string, tooltipText: string) => (
+  <div className="inline-flex items-center gap-1.5">
+    <span>{title}</span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button type="button" className="text-muted-foreground hover:text-foreground transition-colors" aria-label={`Ajuda sobre ${title}`}>
+          <HelpCircle className="h-3.5 w-3.5" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs">
+        <p>{tooltipText}</p>
+      </TooltipContent>
+    </Tooltip>
+  </div>
+);
 
 export default function Configuracoes() {
   const [baseColumns, setBaseColumns] = useState<LayoutColumn[]>(layoutBaseColumns);
@@ -113,10 +138,10 @@ export default function Configuracoes() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Nome da Coluna Excel</TableHead>
-                    <TableHead>Apelido</TableHead>
-                    <TableHead>Tipo da Coluna</TableHead>
-                    <TableHead className="text-center">Análise</TableHead>
+                    <TableHead>{renderHeaderWithHelp("Nome da Coluna Excel", columnHelpText.nomeColunaExcel)}</TableHead>
+                    <TableHead>{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
+                    <TableHead>{renderHeaderWithHelp("Tipo da Coluna", columnHelpText.tipoColuna)}</TableHead>
+                    <TableHead className="text-center">{renderHeaderWithHelp("Análise", columnHelpText.analise)}</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -220,9 +245,9 @@ export default function Configuracoes() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Coluna Excel</TableHead>
-                        <TableHead>Apelido</TableHead>
-                        <TableHead>Tipo da Coluna</TableHead>
+                        <TableHead>{renderHeaderWithHelp("Coluna Excel", columnHelpText.nomeColunaExcel)}</TableHead>
+                        <TableHead>{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
+                        <TableHead>{renderHeaderWithHelp("Tipo da Coluna", columnHelpText.tipoColuna)}</TableHead>
                         <TableHead className="w-12"></TableHead>
                       </TableRow>
                     </TableHeader>
