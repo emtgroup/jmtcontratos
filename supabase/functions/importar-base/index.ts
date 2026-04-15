@@ -139,12 +139,18 @@ Deno.serve(async (req) => {
             { onConflict: "chave_normalizada" }
           );
         } else {
-          // Compare: check if any normalized field changed
+          // Compare normalized fields + dados_originais using deep equality
+          const dadosOrigStr = JSON.stringify(linha.dados_originais, Object.keys(linha.dados_originais).sort());
+          const existingOrigStr = JSON.stringify(existing.dados_originais, 
+            typeof existing.dados_originais === 'object' && existing.dados_originais !== null 
+              ? Object.keys(existing.dados_originais as Record<string, unknown>).sort() 
+              : undefined);
+          
           const dadosChanged =
             existing.contrato_vinculado !== contratoNorm ||
             existing.nota_fiscal !== notaNorm ||
-            existing.placa_normalizada !== placaNorm ||
-            JSON.stringify(existing.dados_originais) !== JSON.stringify(linha.dados_originais);
+            (existing.placa_normalizada || null) !== (placaNorm || null) ||
+            dadosOrigStr !== existingOrigStr;
 
           if (dadosChanged) {
             // UPDATE
