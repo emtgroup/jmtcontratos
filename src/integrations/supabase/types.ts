@@ -14,7 +14,128 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      conferencia: {
+        Row: {
+          chave_normalizada: string
+          id: string
+          origem: string | null
+          status: string
+        }
+        Insert: {
+          chave_normalizada: string
+          id?: string
+          origem?: string | null
+          status?: string
+        }
+        Update: {
+          chave_normalizada?: string
+          id?: string
+          origem?: string | null
+          status?: string
+        }
+        Relationships: []
+      }
+      import_lock: {
+        Row: {
+          id: number
+          importacao_id: string | null
+          locked: boolean
+          locked_at: string | null
+        }
+        Insert: {
+          id?: number
+          importacao_id?: string | null
+          locked?: boolean
+          locked_at?: string | null
+        }
+        Update: {
+          id?: number
+          importacao_id?: string | null
+          locked?: boolean
+          locked_at?: string | null
+        }
+        Relationships: []
+      }
+      importacoes: {
+        Row: {
+          atualizados: number
+          created_at: string
+          id: string
+          ignorados: number
+          inseridos: number
+          layout_id: string | null
+          nome_arquivo: string
+          status: string
+          tipo: string
+          total_linhas: number
+        }
+        Insert: {
+          atualizados?: number
+          created_at?: string
+          id?: string
+          ignorados?: number
+          inseridos?: number
+          layout_id?: string | null
+          nome_arquivo: string
+          status?: string
+          tipo: string
+          total_linhas?: number
+        }
+        Update: {
+          atualizados?: number
+          created_at?: string
+          id?: string
+          ignorados?: number
+          inseridos?: number
+          layout_id?: string | null
+          nome_arquivo?: string
+          status?: string
+          tipo?: string
+          total_linhas?: number
+        }
+        Relationships: []
+      }
+      registros_base: {
+        Row: {
+          chave_normalizada: string
+          contrato_vinculado: string
+          dados_originais: Json
+          id: string
+          nota_fiscal: string
+          placa_normalizada: string | null
+          ultima_importacao_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          chave_normalizada: string
+          contrato_vinculado: string
+          dados_originais?: Json
+          id?: string
+          nota_fiscal: string
+          placa_normalizada?: string | null
+          ultima_importacao_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          chave_normalizada?: string
+          contrato_vinculado?: string
+          dados_originais?: Json
+          id?: string
+          nota_fiscal?: string
+          placa_normalizada?: string | null
+          ultima_importacao_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "registros_base_ultima_importacao_id_fkey"
+            columns: ["ultima_importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
