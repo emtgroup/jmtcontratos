@@ -38,7 +38,8 @@ export interface LayoutComplementar {
 export const statusLabels: Record<StatusType, string> = {
   vinculado: "Vinculado",
   aguardando: "Aguardando",
-  divergente: "Divergente",
+  // PRD usa o termo "Contrato Divergente" para deixar explícito o tipo de divergência exibida.
+  divergente: "Contrato Divergente",
   ambiguo: "Ambíguo",
 };
 

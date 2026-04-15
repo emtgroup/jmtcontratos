@@ -49,7 +49,8 @@ const columnHelpText = {
   apelido: "Nome interno utilizado pelo sistema para identificar a coluna. Não precisa ser igual ao Excel.",
   // Texto orientado à nova taxonomia de tipos para reduzir ambiguidades no cadastro.
   tipoColuna: "Define o significado da coluna no sistema: identificação principal (Contrato vinculado/Nota fiscal), apoio (Placa), informativos (Peso fiscal/Peso líquido) e detalhe/exibição (Data da nota, Hora, Produto, Observação NF, Chave de acesso e Clifor).",
-  analise: "Indica se essa coluna será considerada na conferência e comparação dos dados.",
+  // Microcopy explícita para reduzir interpretação incorreta do checkbox na etapa de configuração.
+  analise: "Indica participação em análises visuais da conferência. Não define chave, não define matching e não altera regra central do sistema.",
 };
 
 const renderHeaderWithHelp = (title: string, tooltipText: string) => (
@@ -128,6 +129,10 @@ export default function Configuracoes() {
                 <span>
                   O usuário define o significado das colunas; o sistema usa esse mapeamento na leitura e conferência. Contrato vinculado e Nota fiscal são identificação principal, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor compõem os campos de detalhe e exibição.
                 </span>
+              </div>
+              <div className="rounded-md border border-dashed p-3 mb-4 text-xs text-muted-foreground">
+                {/* Reforço pontual do PRD para evitar leitura equivocada sobre o campo Análise. */}
+                <span className="font-medium text-foreground">Campo "Análise":</span> apoio de exibição. Não define chave, não define matching e não altera a regra central.
               </div>
               {/* Preparação visual para futura lógica de leitura, mantendo a tela em modo mock. */}
               <div className="rounded-md border p-3 mb-4 space-y-2">
@@ -224,6 +229,10 @@ export default function Configuracoes() {
                 <span>
                   O mapeamento complementar segue a mesma semântica da base: Contrato vinculado e Nota fiscal identificam registros, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor são campos de detalhe e exibição.
                 </span>
+              </div>
+              <div className="rounded-md border border-dashed p-3 mb-4 text-xs text-muted-foreground">
+                {/* Alinhamento textual entre Base e Complementar: layout mapeia significado, sistema define comportamento. */}
+                Regra igual ao Layout Base: o usuário define o significado da coluna e o sistema aplica a lógica (chave e matching não são configuráveis nesta tela).
               </div>
               {layoutsComplementares.length === 0 && !showNewLayout && (
                 <div className="text-center py-12 text-muted-foreground">

@@ -13,15 +13,19 @@ export default function Importacao() {
 
   const handleImport = () => setShowResumo(true);
 
-  const resumoItems = [
-    { label: "Base Lida (GRL053)", value: importResumoMock.totalBaseLida },
-    { label: "Complementar Lido", value: importResumoMock.totalComplementarLido },
-    { label: "Registros Combinados", value: importResumoMock.combinados },
-    { label: "Atualizados", value: importResumoMock.atualizados },
-    { label: "Pendentes de Layout", value: importResumoMock.pendentesLayout },
+  // Separação explícita entre resultado da importação e reflexo na conferência para evitar ambiguidade conceitual.
+  const resumoImportacaoItems = [
+    { label: "Linhas lidas na Base (GRL053)", value: importResumoMock.totalBaseLida },
+    { label: "Linhas lidas no Complementar", value: importResumoMock.totalComplementarLido },
+    { label: "Registros processados", value: importResumoMock.combinados },
+    { label: "Registros atualizados", value: importResumoMock.atualizados },
+  ];
+
+  // Status abaixo representam o estado exibido na conferência após a importação (não são etapas da carga em si).
+  const resumoConferenciaItems = [
     { label: "Vinculados", value: importResumoMock.vinculados },
     { label: "Aguardando", value: importResumoMock.aguardando },
-    { label: "Divergentes", value: importResumoMock.divergentes },
+    { label: "Contrato Divergente", value: importResumoMock.divergentes },
     { label: "Ambíguos", value: importResumoMock.ambiguos },
   ];
 
@@ -88,14 +92,34 @@ export default function Importacao() {
               Resumo da Importação (Mock)
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {resumoItems.map((item) => (
-                <div key={item.label} className="text-center p-3 rounded-md bg-muted/50">
-                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
-                  <p className="text-xl font-bold mt-1">{item.value}</p>
-                </div>
-              ))}
+          <CardContent className="space-y-5">
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Resultado da importação</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {resumoImportacaoItems.map((item) => (
+                  <div key={item.label} className="text-center p-3 rounded-md bg-muted/50">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
+                    <p className="text-xl font-bold mt-1">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-md border border-dashed p-3">
+              {/* Pendência de layout mantida no mock, mas fora dos indicadores centrais para não conflitar com o resultado da carga. */}
+              <p className="text-xs text-muted-foreground">
+                Pendências de layout identificadas na leitura: <span className="font-semibold text-foreground">{importResumoMock.pendentesLayout}</span>
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2">Estado atual na conferência</p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {resumoConferenciaItems.map((item) => (
+                  <div key={item.label} className="text-center p-3 rounded-md bg-muted/50">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
+                    <p className="text-xl font-bold mt-1">{item.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </CardContent>
         </Card>

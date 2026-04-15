@@ -10,7 +10,8 @@ const statCards = [
   { label: "Total Registros", value: dashboardStats.total, icon: Database, borderColor: "border-l-primary" },
   { label: "Vinculados", value: dashboardStats.vinculados, icon: CheckCircle, borderColor: "border-l-[hsl(var(--status-vinculado))]" },
   { label: "Aguardando", value: dashboardStats.aguardando, icon: Clock, borderColor: "border-l-[hsl(var(--status-aguardando))]" },
-  { label: "Divergentes", value: dashboardStats.divergentes, icon: AlertTriangle, borderColor: "border-l-[hsl(var(--status-divergente))]" },
+  // Terminologia alinhada ao PRD da conferência para manter consistência entre telas.
+  { label: "Contrato Divergente", value: dashboardStats.divergentes, icon: AlertTriangle, borderColor: "border-l-[hsl(var(--status-divergente))]" },
   { label: "Ambíguos", value: dashboardStats.ambiguos, icon: HelpCircle, borderColor: "border-l-[hsl(var(--status-ambiguo))]" },
 ];
 
