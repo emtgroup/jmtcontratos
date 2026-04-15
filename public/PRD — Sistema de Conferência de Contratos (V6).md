@@ -1,8 +1,4 @@
 
----
-
-# 📘 PRD — Sistema de Conferência de Contratos (V6) ✅ DEFINITIVO
-
 ````markdown
 # 📘 PRD — Sistema de Conferência de Contratos (V6)
 
