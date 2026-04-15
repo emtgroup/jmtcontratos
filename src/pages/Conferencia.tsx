@@ -10,6 +10,14 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Search, Download, Copy } from "lucide-react";
 
 const statusFilters: (StatusType | "todos")[] = ["todos", "vinculado", "aguardando", "divergente", "ambiguo"];
+const statusFilterLabels: Record<StatusType | "todos", string> = {
+  todos: "Todos",
+  vinculado: "Vinculado",
+  aguardando: "Aguardando",
+  // Nomenclatura alinhada ao PRD para deixar explícito que a divergência é de contrato.
+  divergente: "Contrato Divergente",
+  ambiguo: "Ambíguo",
+};
 
 export default function Conferencia() {
   const [activeFilter, setActiveFilter] = useState<StatusType | "todos">("todos");
@@ -46,7 +54,7 @@ export default function Conferencia() {
         <div className="flex gap-1.5">
           {statusFilters.map((s) => (
             <Button key={s} variant={activeFilter === s ? "default" : "outline"} size="sm" onClick={() => setActiveFilter(s)} className="capitalize text-xs">
-              {s === "todos" ? "Todos" : s}
+              {statusFilterLabels[s]}
             </Button>
           ))}
         </div>
@@ -58,14 +66,15 @@ export default function Conferencia() {
             <TableHeader>
               <TableRow>
                 <TableHead>Status</TableHead>
-                <TableHead>Chave Determinística</TableHead>
+                {/* Coluna técnica mantida para auditoria, com menor protagonismo visual na leitura operacional. */}
+                <TableHead className="text-muted-foreground">Chave técnica</TableHead>
                 <TableHead>Contrato</TableHead>
                 <TableHead>Nota Fiscal</TableHead>
                 <TableHead>Data NF</TableHead>
                 <TableHead>Placa</TableHead>
                 {/* Nomenclaturas padronizadas para aderência ao contexto real do projeto. */}
-                <TableHead className="text-right">Peso Fiscal</TableHead>
-                <TableHead className="text-right">Peso Líquido</TableHead>
+                <TableHead className="text-right text-muted-foreground">Peso Fiscal</TableHead>
+                <TableHead className="text-right text-muted-foreground">Peso Líquido</TableHead>
                 <TableHead>Motivo</TableHead>
               </TableRow>
             </TableHeader>
@@ -74,16 +83,17 @@ export default function Conferencia() {
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelectedRecord(r)}>
                   {/* Badge com variação sólida para leitura operacional mais rápida na tela de conferência. */}
                   <TableCell><StatusBadge status={r.status} variant="solid" /></TableCell>
-                  <TableCell className="font-mono text-xs">{r.chaveDeterministica}</TableCell>
+                  <TableCell className="font-mono text-[11px] text-muted-foreground">{r.chaveDeterministica}</TableCell>
                   <TableCell className="font-medium">{r.contrato}</TableCell>
                   {/* Clique direto na nota também abre o painel lateral para investigação sem sair da tela. */}
                   <TableCell className="underline-offset-2 hover:underline">{r.nota}</TableCell>
                   <TableCell>{r.dataNF}</TableCell>
                   <TableCell>{r.placa}</TableCell>
-                  <TableCell className="text-right">{r.pesoBase.toLocaleString("pt-BR")}</TableCell>
-                  <TableCell className="text-right">{r.pesoComplementar?.toLocaleString("pt-BR") ?? "—"}</TableCell>
-                  {/* Motivo é exibido de forma textual para clareza operacional sem alterar regras/filtros. */}
-                  <TableCell>{r.motivo}</TableCell>
+                  {/* Pesos permanecem informativos e com menor destaque para não sugerir decisão de status por peso. */}
+                  <TableCell className="text-right text-xs text-muted-foreground">{r.pesoBase.toLocaleString("pt-BR")}</TableCell>
+                  <TableCell className="text-right text-xs text-muted-foreground">{r.pesoComplementar?.toLocaleString("pt-BR") ?? "—"}</TableCell>
+                  {/* Motivo curto para apoiar triagem sem transformar a tabela em explicação de regra de negócio. */}
+                  <TableCell className="text-xs">{r.motivo}</TableCell>
                 </TableRow>
               ))}
               {filtered.length === 0 && (
@@ -105,6 +115,10 @@ export default function Conferencia() {
         <div className="flex items-center gap-1.5">
           <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--status-ambiguo))]" />
           Ambíguo (requer revisão operacional)
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="h-2.5 w-2.5 rounded-full bg-[hsl(var(--status-divergente))]" />
+          Contrato Divergente (diagnóstico secundário)
         </div>
         <div>
           Peso Fiscal e Peso Líquido são informativos nesta etapa mockada.
