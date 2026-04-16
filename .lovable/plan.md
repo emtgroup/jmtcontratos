@@ -1,69 +1,84 @@
 
 
-# Plano: CRUD Real para Configurações de Layout
+# Plano: CRUD Real dos Layouts Complementares
 
 ## Diagnóstico
 
-A tela `Configuracoes.tsx` importa `layoutBaseColumns` do mock (`src/data/mock.ts`) e usa `useState` puro. O "Salvar Mapeamento" só valida localmente e mostra feedback verde, mas não grava nada. As tabelas `layouts_base` e `layouts_base_colunas` **não existem** no banco.
+A aba "Layouts Complementares" em `Configuracoes.tsx` é **100% mock**:
+- Importa `layoutsComplementares` de `src/data/mock.ts` (linha 12)
+- O formulário de novo layout não vincula inputs a estado (linhas 492-493 usam `<Input>` sem `value`/`onChange`)
+- Não existe serviço de persistência para complementares
+- O botão "Salvar Layout" não faz nada
+- Não há carregamento do banco, não há exclusão real
 
-## Etapa 1 — Criar tabelas no banco (migration)
+As tabelas `layouts_complementares` e `layouts_complementares_colunas` já existem no banco (com FK cascade), mas estão vazias e sem uso.
 
-### `layouts_base`
-| Campo | Tipo |
-|-------|------|
-| id | uuid PK default gen_random_uuid() |
-| nome | text not null default 'GRL053' |
-| ativo | boolean not null default true |
-| linha_cabecalho | int not null default 2 |
-| linha_dados | int not null default 3 |
-| created_at | timestamptz default now() |
+## Etapa 1 — Criar serviço de persistência
 
-### `layouts_base_colunas`
-| Campo | Tipo |
-|-------|------|
-| id | uuid PK default gen_random_uuid() |
-| layout_base_id | uuid FK → layouts_base(id) ON DELETE CASCADE |
-| nome_coluna_excel | text not null |
-| apelido | text default '' |
-| tipo_coluna | text not null |
-| analise | boolean default false |
-| ordem | int default 0 |
+Criar `src/services/layoutComplementarService.ts` espelhando o padrão do `layoutBaseService.ts`:
 
-### `layouts_complementares` e `layouts_complementares_colunas`
-Mesma estrutura análoga (preparação, sem CRUD funcional nesta entrega).
+- `fetchLayoutsComplementares()` — busca todos os layouts ativos + colunas de cada um
+- `saveLayoutComplementar(layout, colunas)` — upsert layout + sincronização de colunas (mesmo padrão: buscar IDs atuais, deletar removidos, insert/update restantes, recarregar do banco)
+- `deleteLayoutComplementar(id)` — deleta o layout (FK cascade remove colunas automaticamente)
 
-RLS: permissiva (`true`) como as demais tabelas do sistema interno sem autenticação.
+Diferenças em relação ao base:
+- Pode existir N layouts complementares (não apenas 1)
+- Nome do layout é obrigatório e editável
+- Cada layout tem seus próprios `linha_cabecalho` e `linha_dados`
 
-## Etapa 2 — Serviço de persistência
+## Etapa 2 — Reescrever a aba complementar em `Configuracoes.tsx`
 
-Criar `src/services/layoutBaseService.ts` com funções usando o Supabase client:
-- `fetchLayoutBase()` — busca layout ativo + colunas
-- `saveLayoutBase(layout, colunas)` — upsert layout + sync colunas (delete removidas, upsert existentes/novas)
+Substituir toda a seção mock (linhas 431-535) por implementação real:
 
-## Etapa 3 — Ajustar `Configuracoes.tsx`
+**Estado:**
+- `complementares: LayoutComplementarCompleto[]` — lista carregada do banco
+- `editingLayout: { layout, colunas } | null` — layout em edição/criação
+- `isSavingComplementar`, `isDeletingId`
 
-- Remover import de `layoutBaseColumns` do mock
-- Carregar dados do banco via `useEffect` ao montar
-- No "Salvar Mapeamento":
-  1. Validar (contrato vinculado exato 1, nota fiscal exato 1, sem nome vazio, sem duplicata)
-  2. Chamar `saveLayoutBase()`
-  3. Se erro → toast de erro, sem feedback falso
-  4. Se sucesso → recarregar do banco → toast de sucesso
-- Persistir `linha_cabecalho` e `linha_dados`
-- Manter toda a lógica visual existente (semântica de tipos, badges, tooltips)
+**Carregamento:**
+- `useEffect` busca todos os layouts complementares do banco ao montar (junto com o base)
 
-## Etapa 4 — Relatório markdown
+**Lista de layouts existentes:**
+- Tabela com Nome, Qtd Colunas, Ações (Editar / Excluir)
+- Editar abre o formulário preenchido
+- Excluir chama `deleteLayoutComplementar` e recarrega
 
-Arquivo `analise-8-crud-layout-base.md` documentando causa raiz, alterações e pendências.
+**Formulário (criar/editar):**
+- Nome do layout (obrigatório)
+- Linha cabeçalho / linha dados
+- Tabela de colunas com inputs vinculados a estado (nome Excel, apelido, tipo, análise)
+- Botões: Adicionar Coluna, Salvar, Cancelar
+- Mesmas validações do base: exatamente 1 "Contrato vinculado", 1 "Nota fiscal", sem nome vazio, sem duplicata
 
-## Fora de escopo
-- CRUD funcional de layouts complementares (apenas tabelas criadas)
-- Importação, matching, conferência — não tocados
-- Redesign visual
+**Salvamento:**
+- Validar antes
+- Chamar `saveLayoutComplementar()`
+- Erro → toast de erro
+- Sucesso → recarregar lista do banco → toast de sucesso → fechar formulário
+
+## Etapa 3 — Remover dependência de mock
+
+- Remover import de `layoutsComplementares` do `Configuracoes.tsx`
+- No `Dashboard.tsx`, substituir contagem mock por dado real (ou manter mock apenas lá, pois Dashboard está fora de escopo — decisão: manter mock no Dashboard por ora, não alterar outras telas)
+
+## Etapa 4 — Validar consistência com Layout Base
+
+Garantir que o serviço complementar segue exatamente o mesmo padrão:
+- Mesmo fluxo de sync de colunas (buscar IDs → deletar removidos → upsert restantes → recarregar)
+- Mesmas validações
+- Mesmo comportamento de recarregamento pós-save
+- Mesmos feedbacks de toast
 
 ## Arquivos alterados
-- Migration SQL (4 tabelas)
-- `src/services/layoutBaseService.ts` (novo)
-- `src/pages/Configuracoes.tsx` (persistência real)
-- `analise-8-crud-layout-base.md` (relatório)
+
+| Arquivo | Ação |
+|---------|------|
+| `src/services/layoutComplementarService.ts` | Novo — CRUD completo |
+| `src/pages/Configuracoes.tsx` | Reescrever aba complementar com persistência real |
+
+## Fora de escopo
+- Dashboard (mantém mock)
+- Importação, conferência, matching
+- Modal de confirmação de exclusão (UX futuro)
+- Refatoração do layout base (já funcional)
 
