@@ -95,6 +95,136 @@ export type Database = {
         }
         Relationships: []
       }
+      layouts_base: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          linha_cabecalho: number
+          linha_dados: number
+          nome: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          linha_cabecalho?: number
+          linha_dados?: number
+          nome?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          linha_cabecalho?: number
+          linha_dados?: number
+          nome?: string
+        }
+        Relationships: []
+      }
+      layouts_base_colunas: {
+        Row: {
+          analise: boolean
+          apelido: string
+          id: string
+          layout_base_id: string
+          nome_coluna_excel: string
+          ordem: number
+          tipo_coluna: string
+        }
+        Insert: {
+          analise?: boolean
+          apelido?: string
+          id?: string
+          layout_base_id: string
+          nome_coluna_excel: string
+          ordem?: number
+          tipo_coluna: string
+        }
+        Update: {
+          analise?: boolean
+          apelido?: string
+          id?: string
+          layout_base_id?: string
+          nome_coluna_excel?: string
+          ordem?: number
+          tipo_coluna?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "layouts_base_colunas_layout_base_id_fkey"
+            columns: ["layout_base_id"]
+            isOneToOne: false
+            referencedRelation: "layouts_base"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      layouts_complementares: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          id: string
+          linha_cabecalho: number
+          linha_dados: number
+          nome: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          linha_cabecalho?: number
+          linha_dados?: number
+          nome: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          id?: string
+          linha_cabecalho?: number
+          linha_dados?: number
+          nome?: string
+        }
+        Relationships: []
+      }
+      layouts_complementares_colunas: {
+        Row: {
+          analise: boolean
+          apelido: string
+          id: string
+          layout_complementar_id: string
+          nome_coluna_excel: string
+          ordem: number
+          tipo_coluna: string
+        }
+        Insert: {
+          analise?: boolean
+          apelido?: string
+          id?: string
+          layout_complementar_id: string
+          nome_coluna_excel: string
+          ordem?: number
+          tipo_coluna: string
+        }
+        Update: {
+          analise?: boolean
+          apelido?: string
+          id?: string
+          layout_complementar_id?: string
+          nome_coluna_excel?: string
+          ordem?: number
+          tipo_coluna?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "layouts_complementares_colunas_layout_complementar_id_fkey"
+            columns: ["layout_complementar_id"]
+            isOneToOne: false
+            referencedRelation: "layouts_complementares"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       registros_base: {
         Row: {
           chave_normalizada: string
