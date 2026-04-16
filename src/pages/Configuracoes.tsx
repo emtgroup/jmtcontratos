@@ -691,7 +691,6 @@ export default function Configuracoes() {
     </div>
   );
 }
-      { id: `new-${Date.now()}`, nome_coluna_excel: "", apelido: "", tipo_coluna: "Data da nota", analise: true, ordem: newLayoutCols.length, _isNew: true },
     ]);
   };
 
