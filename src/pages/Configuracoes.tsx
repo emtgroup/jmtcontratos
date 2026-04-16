@@ -101,12 +101,15 @@ export default function Configuracoes() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // --- Estado de layouts complementares (ainda mock) ---
-  const [showNewLayout, setShowNewLayout] = useState(false);
-  const [newLayoutName, setNewLayoutName] = useState("");
-  const [newLayoutCols, setNewLayoutCols] = useState<LayoutBaseColuna[]>([
-    { id: "n1", nome_coluna_excel: "", apelido: "", tipo_coluna: "Contrato vinculado", analise: true, ordem: 0, _isNew: true },
-  ]);
+  // --- Estado de layouts complementares (persistência real) ---
+  const [complementares, setComplementares] = useState<LayoutComplementarCompleto[]>([]);
+  const [editingComplementar, setEditingComplementar] = useState<{
+    layout: { id?: string; nome: string; linha_cabecalho: number; linha_dados: number };
+    colunas: LayoutComplementarColuna[];
+  } | null>(null);
+  const [isSavingComplementar, setIsSavingComplementar] = useState(false);
+  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [complementarValidationErrors, setComplementarValidationErrors] = useState<string[]>([]);
 
   // --- Carregamento inicial do banco ---
   const loadLayoutBase = useCallback(async () => {
