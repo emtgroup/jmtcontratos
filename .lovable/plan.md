@@ -1,144 +1,69 @@
 
 
-# Plano: Backend Real da Importação Base (GRL053) via Lovable Cloud
+# Plano: CRUD Real para Configurações de Layout
 
-## Resumo
+## Diagnóstico
 
-Implementar a importação base com persistência real no Supabase (Lovable Cloud), substituindo completamente o fluxo mock atual. Inclui criação de tabelas, Edge Function para processamento, e ajuste do frontend.
+A tela `Configuracoes.tsx` importa `layoutBaseColumns` do mock (`src/data/mock.ts`) e usa `useState` puro. O "Salvar Mapeamento" só valida localmente e mostra feedback verde, mas não grava nada. As tabelas `layouts_base` e `layouts_base_colunas` **não existem** no banco.
 
----
+## Etapa 1 — Criar tabelas no banco (migration)
 
-## Pré-requisitos
-
-O projeto **não possui Supabase conectado**. Será necessário habilitar o Lovable Cloud antes de implementar. Isso cria automaticamente o projeto Supabase e disponibiliza o client.
-
----
-
-## Etapa 1 — Corrigir erro de build existente
-
-O arquivo `src/components/ui/chart.tsx` tem erros de TypeScript com tipos do Recharts. Corrigir com type assertions para desbloquear o build.
-
----
-
-## Etapa 2 — Habilitar Lovable Cloud e configurar Supabase
-
-- Conectar Lovable Cloud (Database)
-- Criar o client Supabase em `src/integrations/supabase/client.ts`
-
----
-
-## Etapa 3 — Criar tabelas no banco (migrations)
-
-### 3.1 `importacoes`
+### `layouts_base`
 | Campo | Tipo |
 |-------|------|
-| id | uuid PK |
-| tipo | text ('base' / 'complementar') |
-| layout_id | uuid nullable |
-| nome_arquivo | text |
-| total_linhas | int |
-| inseridos | int |
-| atualizados | int |
-| ignorados | int |
-| created_at | timestamptz |
+| id | uuid PK default gen_random_uuid() |
+| nome | text not null default 'GRL053' |
+| ativo | boolean not null default true |
+| linha_cabecalho | int not null default 2 |
+| linha_dados | int not null default 3 |
+| created_at | timestamptz default now() |
 
-### 3.2 `registros_base`
+### `layouts_base_colunas`
 | Campo | Tipo |
 |-------|------|
-| id | uuid PK |
-| chave_normalizada | text UNIQUE |
-| contrato_vinculado | text |
-| nota_fiscal | text |
-| placa_normalizada | text nullable |
-| dados_originais | jsonb |
-| ultima_importacao_id | uuid FK → importacoes |
-| updated_at | timestamptz |
+| id | uuid PK default gen_random_uuid() |
+| layout_base_id | uuid FK → layouts_base(id) ON DELETE CASCADE |
+| nome_coluna_excel | text not null |
+| apelido | text default '' |
+| tipo_coluna | text not null |
+| analise | boolean default false |
+| ordem | int default 0 |
 
-### 3.3 `conferencia`
-| Campo | Tipo |
-|-------|------|
-| id | uuid PK |
-| chave_normalizada | text UNIQUE |
-| status | text ('vinculado','aguardando','divergente','ambiguo') |
-| origem | text nullable |
+### `layouts_complementares` e `layouts_complementares_colunas`
+Mesma estrutura análoga (preparação, sem CRUD funcional nesta entrega).
 
-### 3.4 RLS
-- Desabilitar RLS inicialmente (sistema interno sem autenticação por enquanto)
+RLS: permissiva (`true`) como as demais tabelas do sistema interno sem autenticação.
 
----
+## Etapa 2 — Serviço de persistência
 
-## Etapa 4 — Edge Function: `importar-base`
+Criar `src/services/layoutBaseService.ts` com funções usando o Supabase client:
+- `fetchLayoutBase()` — busca layout ativo + colunas
+- `saveLayoutBase(layout, colunas)` — upsert layout + sync colunas (delete removidas, upsert existentes/novas)
 
-Endpoint que recebe o arquivo Excel parseado (JSON) e executa:
+## Etapa 3 — Ajustar `Configuracoes.tsx`
 
-1. Registrar importação em `importacoes` (lock via flag — rejeitar se já em andamento)
-2. Para cada linha:
-   - Aplicar normalização (contrato: primeiro bloco numérico antes do hífen; nota: só números; placa: upper, sem espaço/hífen)
-   - Gerar `chave_normalizada` = `{contrato}::{nota}` (separador `::` evita colisão)
-   - Upsert incremental em `registros_base`:
-     - Não existe → INSERT
-     - Existe com dados diferentes → UPDATE
-     - Existe igual → IGNORE
-   - Upsert em `conferencia` com status `aguardando`
-3. Atualizar `importacoes` com contadores finais
-4. Retornar resumo
+- Remover import de `layoutBaseColumns` do mock
+- Carregar dados do banco via `useEffect` ao montar
+- No "Salvar Mapeamento":
+  1. Validar (contrato vinculado exato 1, nota fiscal exato 1, sem nome vazio, sem duplicata)
+  2. Chamar `saveLayoutBase()`
+  3. Se erro → toast de erro, sem feedback falso
+  4. Se sucesso → recarregar do banco → toast de sucesso
+- Persistir `linha_cabecalho` e `linha_dados`
+- Manter toda a lógica visual existente (semântica de tipos, badges, tooltips)
 
-### Concorrência
-- Usar uma tabela auxiliar `import_lock` (ou advisory lock via pg) para garantir 1 importação por vez
+## Etapa 4 — Relatório markdown
 
----
+Arquivo `analise-8-crud-layout-base.md` documentando causa raiz, alterações e pendências.
 
-## Etapa 5 — Serviço frontend: `importacaoBaseService.ts`
+## Fora de escopo
+- CRUD funcional de layouts complementares (apenas tabelas criadas)
+- Importação, matching, conferência — não tocados
+- Redesign visual
 
-- Ler arquivo Excel no browser com `xlsx` (SheetJS)
-- Aplicar layout base (buscar mapeamento de colunas da configuração)
-- Enviar dados parseados para a Edge Function
-- Receber e exibir resumo real
-
----
-
-## Etapa 6 — Ajustar `Importacao.tsx`
-
-- Substituir o fluxo mock por chamada real ao serviço
-- Adicionar estados de loading e erro
-- Exibir resumo real retornado pela Edge Function
-- Bloquear UI durante importação (concorrência)
-
----
-
-## Etapa 7 — Tipos TypeScript: `src/types/importacao.ts`
-
-Criar interfaces alinhadas ao PRD:
-- `ImportacaoRecord`, `RegistroBase`, `ConferenciaRecord`
-- `ResumoImportacao` (inseridos, atualizados, ignorados, total)
-
----
-
-## Etapa 8 — Relatório markdown
-
-Criar `analise-7-backend-importacao-base-lovable-cloud.md` documentando:
-- PRDs lidos e validados
-- Tabelas criadas
-- Lógica de chave e normalização
-- Comportamento incremental
-- O que ficou fora de escopo
-
----
-
-## Fora de escopo (conforme solicitação)
-
-- Importação complementar
-- Matching base + complementar
-- Diagnóstico secundário (nota + placa)
-- Testes automatizados (serão criados junto com a Edge Function mas limitados ao que o ambiente permite)
-- Redesign de frontend
-
----
-
-## Detalhes técnicos
-
-- **Separador de chave**: `::` (duplo dois-pontos) — não aparece em contratos nem notas, evita colisão
-- **Normalização de contrato**: regex `/^(\d+)/` após remover não-numéricos exceto hífen, pegar primeiro grupo antes do hífen
-- **Parsing Excel**: biblioteca `xlsx` (SheetJS) no frontend, envio de JSON para Edge Function
-- **Lock de concorrência**: tabela `import_lock` com single row + timestamp, verificada no início da Edge Function
+## Arquivos alterados
+- Migration SQL (4 tabelas)
+- `src/services/layoutBaseService.ts` (novo)
+- `src/pages/Configuracoes.tsx` (persistência real)
+- `analise-8-crud-layout-base.md` (relatório)
 
