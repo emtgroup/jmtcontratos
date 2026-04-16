@@ -78,8 +78,9 @@ export function AppSidebar() {
           {!collapsed ? (
             <>
               {/* Bloco discreto para facilitar identificação rápida da versão em uso. */}
-              <p className="truncate">Versão {systemInfo.version}</p>
-              <p className="truncate">Atualizado em {systemInfo.lastUpdated}</p>
+              <p className="truncate">Versão {systemInfo.versionWithCommit}</p>
+              {/* Só exibimos a data quando houver metadado real do build/commit. */}
+              {systemInfo.lastUpdated && <p className="truncate">Atualizado em {systemInfo.lastUpdated}</p>}
             </>
           ) : (
             <p className="text-center">{compactVersion}</p>
