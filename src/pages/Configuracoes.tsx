@@ -12,9 +12,18 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { layoutBaseColumns, layoutsComplementares, LayoutColumn } from "@/data/mock";
 import { Plus, Save, Trash2, Info, HelpCircle } from "lucide-react";
 
+const toFriendlyAlias = (value: string) => {
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
+
+  if (!normalized) return "";
+
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+};
+
 const tipoColunaOptions = [
   "Contrato vinculado",
   "Nota fiscal",
+  "Contrato interno",
   "Placa",
   "Peso fiscal",
   "Peso líquido",
@@ -24,12 +33,15 @@ const tipoColunaOptions = [
   "Observação NF",
   "Chave de acesso",
   "Clifor",
+  "Nome cooperativa",
 ];
 
 const tipoSemantica: Record<string, { categoria: string; destaque?: string }> = {
-  // Semântica fechada para preparar integração com backend sem depender de tipo genérico.
+  // "Contrato vinculado" participa da chave fixa; "Contrato interno" é referência Maxys apenas informativa.
   "Contrato vinculado": { categoria: "Identificação principal", destaque: "Campo principal" },
   "Nota fiscal": { categoria: "Identificação principal", destaque: "Campo principal" },
+  // "Contrato interno" não entra em chave, matching ou diagnóstico: é campo de contexto operacional.
+  "Contrato interno": { categoria: "Detalhe / exibição" },
   Placa: { categoria: "Apoio" },
   "Peso fiscal": { categoria: "Informativo" },
   "Peso líquido": { categoria: "Informativo" },
@@ -39,6 +51,8 @@ const tipoSemantica: Record<string, { categoria: string; destaque?: string }> = 
   "Observação NF": { categoria: "Detalhe / exibição" },
   "Chave de acesso": { categoria: "Detalhe / exibição" },
   Clifor: { categoria: "Detalhe / exibição" },
+  // "Nome cooperativa" é informativo para exibição e não entra em chave/matching.
+  "Nome cooperativa": { categoria: "Detalhe / exibição" },
 };
 
 const getTipoSemantica = (tipo: string) => tipoSemantica[tipo] ?? { categoria: "Detalhe / exibição" };
@@ -48,7 +62,7 @@ const columnHelpText = {
   nomeColunaExcel: "Informe a letra ou nome da coluna conforme aparece no arquivo (ex: A, B, C ou Nome da coluna no Excel).",
   apelido: "Nome interno utilizado pelo sistema para identificar a coluna. Não precisa ser igual ao Excel.",
   // Texto orientado à nova taxonomia de tipos para reduzir ambiguidades no cadastro.
-  tipoColuna: "Define o significado da coluna no sistema: identificação principal (Contrato vinculado/Nota fiscal), apoio (Placa), informativos (Peso fiscal/Peso líquido) e detalhe/exibição (Data da nota, Hora, Produto, Observação NF, Chave de acesso e Clifor).",
+  tipoColuna: "Define o significado da coluna no sistema: identificação principal (Contrato vinculado/Nota fiscal), apoio (Placa), informativos (Peso fiscal/Peso líquido) e detalhe/exibição (Contrato interno, Data da nota, Hora, Produto, Observação NF, Chave de acesso, Clifor e Nome cooperativa).",
   // Microcopy explícita para reduzir interpretação incorreta do checkbox na etapa de configuração.
   analise: "Indica participação em análises visuais da conferência. Não define chave, não define matching e não altera regra central do sistema.",
 };
@@ -71,6 +85,8 @@ const renderHeaderWithHelp = (title: string, tooltipText: string) => (
 
 export default function Configuracoes() {
   const [baseColumns, setBaseColumns] = useState<LayoutColumn[]>(layoutBaseColumns);
+  const [baseValidationErrors, setBaseValidationErrors] = useState<string[]>([]);
+  const [baseSaveFeedback, setBaseSaveFeedback] = useState("");
   const [showNewLayout, setShowNewLayout] = useState(false);
   const [newLayoutName, setNewLayoutName] = useState("");
   const [newLayoutCols, setNewLayoutCols] = useState<LayoutColumn[]>([
@@ -88,6 +104,46 @@ export default function Configuracoes() {
 
   const updateBaseColumnTipo = (id: string, tipo: string) => {
     setBaseColumns(baseColumns.map((col) => (col.id === id ? { ...col, tipo } : col)));
+  };
+
+  const updateBaseColumnExcelName = (id: string, colunaExcel: string) => {
+    setBaseColumns(baseColumns.map((col) => {
+      if (col.id !== id) return col;
+
+      const previousAutoAlias = toFriendlyAlias(col.colunaExcel);
+      const nextAutoAlias = toFriendlyAlias(colunaExcel);
+      // Sugestão automática: preenche quando vazio e sincroniza apenas enquanto o apelido ainda for auto-gerado.
+      const shouldSyncAlias = !col.apelido.trim() || col.apelido === previousAutoAlias;
+
+      return {
+        ...col,
+        colunaExcel,
+        apelido: shouldSyncAlias ? nextAutoAlias : col.apelido,
+      };
+    }));
+  };
+
+  const updateBaseColumnAlias = (id: string, apelido: string) => {
+    // Edição manual é soberana: após alteração do usuário, o auto-preenchimento não sobrescreve mais.
+    setBaseColumns(baseColumns.map((col) => (col.id === id ? { ...col, apelido } : col)));
+  };
+
+  const handleSaveBaseMapping = () => {
+    const contratoVinculadoCount = baseColumns.filter((col) => col.tipo === "Contrato vinculado").length;
+    const notaFiscalCount = baseColumns.filter((col) => col.tipo === "Nota fiscal").length;
+    const errors: string[] = [];
+
+    // Validação mínima obrigatória: os únicos tipos estruturais exigidos continuam sendo Contrato vinculado e Nota fiscal.
+    if (contratoVinculadoCount !== 1) {
+      errors.push("O layout base deve ter exatamente 1 coluna do tipo Contrato vinculado.");
+    }
+
+    if (notaFiscalCount !== 1) {
+      errors.push("O layout base deve ter exatamente 1 coluna do tipo Nota fiscal.");
+    }
+
+    setBaseValidationErrors(errors);
+    setBaseSaveFeedback(errors.length === 0 ? "Mapeamento válido para o Layout Base." : "");
   };
 
   const addNewLayoutCol = () => {
@@ -118,16 +174,28 @@ export default function Configuracoes() {
                 <Button variant="outline" size="sm" onClick={addBaseColumn}>
                   <Plus className="h-4 w-4 mr-1" /> Adicionar Coluna
                 </Button>
-                <Button size="sm">
+                <Button size="sm" onClick={handleSaveBaseMapping}>
                   <Save className="h-4 w-4 mr-1" /> Salvar Mapeamento
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
+              {baseValidationErrors.length > 0 && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 mb-4 text-xs text-destructive space-y-1">
+                  {baseValidationErrors.map((error) => (
+                    <p key={error}>{error}</p>
+                  ))}
+                </div>
+              )}
+              {baseSaveFeedback && (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 mb-4 text-xs text-emerald-700">
+                  {baseSaveFeedback}
+                </div>
+              )}
               <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>
-                  O usuário define o significado das colunas; o sistema usa esse mapeamento na leitura e conferência. Contrato vinculado e Nota fiscal são identificação principal, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor compõem os campos de detalhe e exibição.
+                  O usuário define o significado das colunas; o sistema usa esse mapeamento na leitura e conferência. Contrato vinculado e Nota fiscal são identificação principal, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Contrato interno/Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor/Nome cooperativa compõem os campos de detalhe e exibição.
                 </span>
               </div>
               <div className="rounded-md border border-dashed p-3 mb-4 text-xs text-muted-foreground">
@@ -153,8 +221,9 @@ export default function Configuracoes() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>{renderHeaderWithHelp("Nome da Coluna Excel", columnHelpText.nomeColunaExcel)}</TableHead>
-                    <TableHead>{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
+                    {/* Ajuste de largura da grade: Nome da Coluna Excel ganha espaço para ficar proporcional ao Apelido. */}
+                    <TableHead className="w-[28%]">{renderHeaderWithHelp("Nome da Coluna Excel", columnHelpText.nomeColunaExcel)}</TableHead>
+                    <TableHead className="w-[28%]">{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
                     <TableHead>{renderHeaderWithHelp("Tipo da Coluna", columnHelpText.tipoColuna)}</TableHead>
                     <TableHead className="text-center">{renderHeaderWithHelp("Análise", columnHelpText.analise)}</TableHead>
                     <TableHead className="w-12"></TableHead>
@@ -168,10 +237,18 @@ export default function Configuracoes() {
                     return (
                       <TableRow key={col.id}>
                         <TableCell>
-                          <Input defaultValue={col.colunaExcel} className="h-8 w-20" />
+                          <Input
+                            value={col.colunaExcel}
+                            onChange={(event) => updateBaseColumnExcelName(col.id, event.target.value)}
+                            className="h-8 w-full"
+                          />
                         </TableCell>
                         <TableCell>
-                          <Input defaultValue={col.apelido} className="h-8" />
+                          <Input
+                            value={col.apelido}
+                            onChange={(event) => updateBaseColumnAlias(col.id, event.target.value)}
+                            className="h-8 w-full"
+                          />
                         </TableCell>
                         <TableCell>
                           {/* Destaque visual sem bloquear fluxo: sem validação funcional nesta fase mock. */}
@@ -227,7 +304,7 @@ export default function Configuracoes() {
               <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
                 <Info className="h-4 w-4 mt-0.5 shrink-0" />
                 <span>
-                  O mapeamento complementar segue a mesma semântica da base: Contrato vinculado e Nota fiscal identificam registros, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor são campos de detalhe e exibição.
+                  O mapeamento complementar segue a mesma semântica da base: Contrato vinculado e Nota fiscal identificam registros, Placa é apoio, Peso fiscal e Peso líquido são informativos, e Contrato interno/Data da nota/Hora/Produto/Observação NF/Chave de acesso/Clifor/Nome cooperativa são campos de detalhe e exibição.
                 </span>
               </div>
               <div className="rounded-md border border-dashed p-3 mb-4 text-xs text-muted-foreground">
