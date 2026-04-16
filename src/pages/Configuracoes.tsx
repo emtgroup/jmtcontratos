@@ -691,3 +691,4 @@ export default function Configuracoes() {
     </div>
   );
 }
+
