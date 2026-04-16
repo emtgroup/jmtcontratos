@@ -111,31 +111,36 @@ export default function Configuracoes() {
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [complementarValidationErrors, setComplementarValidationErrors] = useState<string[]>([]);
 
-  // --- Carregamento inicial do banco ---
-  const loadLayoutBase = useCallback(async () => {
+  // --- Carregamento inicial do banco (base + complementares) ---
+  const loadAll = useCallback(async () => {
     setIsLoading(true);
     try {
-      const result = await fetchLayoutBase();
-      if (result) {
-        setLayoutId(result.layout.id);
-        setLinhaCabecalho(result.layout.linha_cabecalho);
-        setLinhaDados(result.layout.linha_dados);
-        setBaseColumns(result.colunas);
+      const [baseResult, compResult] = await Promise.all([
+        fetchLayoutBase(),
+        fetchLayoutsComplementares(),
+      ]);
+
+      if (baseResult) {
+        setLayoutId(baseResult.layout.id);
+        setLinhaCabecalho(baseResult.layout.linha_cabecalho);
+        setLinhaDados(baseResult.layout.linha_dados);
+        setBaseColumns(baseResult.colunas);
       } else {
-        // Nenhum layout no banco — iniciar vazio
         setLayoutId(null);
         setBaseColumns([]);
       }
+
+      setComplementares(compResult);
     } catch (err: any) {
-      toast.error("Erro ao carregar layout base", { description: err.message });
+      toast.error("Erro ao carregar layouts", { description: err.message });
     } finally {
       setIsLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadLayoutBase();
-  }, [loadLayoutBase]);
+    loadAll();
+  }, [loadAll]);
 
   // --- Ações de coluna ---
 
