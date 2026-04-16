@@ -178,10 +178,10 @@ export default function Configuracoes() {
     const notaCount = cols.filter((c) => c.tipo_coluna === "Nota fiscal").length;
 
     if (contratoCount !== 1) {
-      errors.push("O layout base deve ter exatamente 1 coluna do tipo "Contrato vinculado".");
+      errors.push("O layout base deve ter exatamente 1 coluna do tipo 'Contrato vinculado'.");
     }
     if (notaCount !== 1) {
-      errors.push("O layout base deve ter exatamente 1 coluna do tipo "Nota fiscal".");
+      errors.push("O layout base deve ter exatamente 1 coluna do tipo 'Nota fiscal'.");
     }
 
     // Nome da coluna Excel não pode ser vazio
