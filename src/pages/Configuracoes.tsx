@@ -246,11 +246,451 @@ export default function Configuracoes() {
     }
   };
 
-  // --- Layouts complementares (ainda mock — inalterado) ---
+  // --- Layouts complementares: ações ---
 
-  const addNewLayoutCol = () => {
-    setNewLayoutCols([
-      ...newLayoutCols,
+  /** Abre formulário para criar novo layout complementar */
+  const startNewComplementar = () => {
+    setEditingComplementar({
+      layout: { nome: "", linha_cabecalho: 2, linha_dados: 3 },
+      colunas: [
+        { id: `new-${Date.now()}`, nome_coluna_excel: "", apelido: "", tipo_coluna: "Contrato vinculado", analise: true, ordem: 0, _isNew: true },
+      ],
+    });
+    setComplementarValidationErrors([]);
+  };
+
+  /** Abre formulário para editar layout complementar existente */
+  const startEditComplementar = (lc: LayoutComplementarCompleto) => {
+    setEditingComplementar({
+      layout: {
+        id: lc.layout.id,
+        nome: lc.layout.nome,
+        linha_cabecalho: lc.layout.linha_cabecalho,
+        linha_dados: lc.layout.linha_dados,
+      },
+      colunas: lc.colunas.map((c) => ({ ...c })),
+    });
+    setComplementarValidationErrors([]);
+  };
+
+  const cancelEditComplementar = () => {
+    setEditingComplementar(null);
+    setComplementarValidationErrors([]);
+  };
+
+  const addComplementarCol = () => {
+    if (!editingComplementar) return;
+    setEditingComplementar({
+      ...editingComplementar,
+      colunas: [
+        ...editingComplementar.colunas,
+        { id: `new-${Date.now()}`, nome_coluna_excel: "", apelido: "", tipo_coluna: "Data da nota", analise: false, ordem: editingComplementar.colunas.length, _isNew: true },
+      ],
+    });
+  };
+
+  const removeComplementarCol = (colId: string) => {
+    if (!editingComplementar) return;
+    setEditingComplementar({
+      ...editingComplementar,
+      colunas: editingComplementar.colunas.filter((c) => c.id !== colId),
+    });
+  };
+
+  const updateComplementarCol = (colId: string, field: keyof LayoutComplementarColuna, value: any) => {
+    if (!editingComplementar) return;
+    setEditingComplementar({
+      ...editingComplementar,
+      colunas: editingComplementar.colunas.map((c) => (c.id === colId ? { ...c, [field]: value } : c)),
+    });
+  };
+
+  const updateComplementarColExcelName = (colId: string, nomeExcel: string) => {
+    if (!editingComplementar) return;
+    setEditingComplementar({
+      ...editingComplementar,
+      colunas: editingComplementar.colunas.map((c) => {
+        if (c.id !== colId) return c;
+        const previousAutoAlias = toFriendlyAlias(c.nome_coluna_excel);
+        const nextAutoAlias = toFriendlyAlias(nomeExcel);
+        const shouldSyncAlias = !c.apelido.trim() || c.apelido === previousAutoAlias;
+        return { ...c, nome_coluna_excel: nomeExcel, apelido: shouldSyncAlias ? nextAutoAlias : c.apelido };
+      }),
+    });
+  };
+
+  const handleSaveComplementar = async () => {
+    if (!editingComplementar) return;
+
+    const errors: string[] = [];
+    if (!editingComplementar.layout.nome.trim()) {
+      errors.push("Nome do layout é obrigatório.");
+    }
+    const colErrors = validateColumns(editingComplementar.colunas);
+    errors.push(...colErrors);
+
+    setComplementarValidationErrors(errors);
+    if (errors.length > 0) {
+      toast.error("Layout inválido", { description: "Corrija os erros antes de salvar." });
+      return;
+    }
+
+    setIsSavingComplementar(true);
+    try {
+      await saveLayoutComplementar(editingComplementar.layout as any, editingComplementar.colunas);
+      const updated = await fetchLayoutsComplementares();
+      setComplementares(updated);
+      setEditingComplementar(null);
+      setComplementarValidationErrors([]);
+      toast.success("Layout complementar salvo com sucesso");
+    } catch (err: any) {
+      toast.error("Erro ao salvar layout complementar", { description: err.message });
+    } finally {
+      setIsSavingComplementar(false);
+    }
+  };
+
+  const handleDeleteComplementar = async (id: string) => {
+    setIsDeletingId(id);
+    try {
+      await deleteLayoutComplementar(id);
+      const updated = await fetchLayoutsComplementares();
+      setComplementares(updated);
+      if (editingComplementar?.layout.id === id) {
+        setEditingComplementar(null);
+      }
+      toast.success("Layout complementar excluído");
+    } catch (err: any) {
+      toast.error("Erro ao excluir layout", { description: err.message });
+    } finally {
+      setIsDeletingId(null);
+    }
+  };
+
+  // --- Render ---
+
+  if (isLoading) {
+    return (
+      <div>
+        <PageHeader title="Configurações de Layout" subtitle="Carregando..." />
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <PageHeader title="Configurações de Layout" subtitle="Mapeie colunas da Base GRL053 e de relatórios externos complementares" />
+
+      <Tabs defaultValue="base">
+        <TabsList className="mb-4">
+          <TabsTrigger value="base">Layout Base (GRL053)</TabsTrigger>
+          <TabsTrigger value="complementares">Layouts Complementares</TabsTrigger>
+        </TabsList>
+
+        {/* ========== BASE TAB ========== */}
+        <TabsContent value="base">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Layout Base (GRL053) — Mapeamento de Colunas</CardTitle>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={addBaseColumn} disabled={isSaving}>
+                  <Plus className="h-4 w-4 mr-1" /> Adicionar Coluna
+                </Button>
+                <Button size="sm" onClick={handleSaveBaseMapping} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                  Salvar Mapeamento
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {baseValidationErrors.length > 0 && (
+                <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 mb-4 text-xs text-destructive space-y-1">
+                  {baseValidationErrors.map((error) => (
+                    <p key={error}>{error}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
+                <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  O usuário define o significado das colunas; o sistema usa esse mapeamento na leitura e conferência.
+                </span>
+              </div>
+              <div className="rounded-md border border-dashed p-3 mb-4 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">Campo "Análise":</span> apoio de exibição. Não define chave, não define matching e não altera a regra central.
+              </div>
+
+              <div className="rounded-md border p-3 mb-4 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  Configure de qual linha o sistema começa a ler o cabeçalho e os dados do arquivo.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Linha inicial do cabeçalho</label>
+                    <Input type="number" value={linhaCabecalho} onChange={(e) => setLinhaCabecalho(Number(e.target.value) || 1)} className="h-8" disabled={isSaving} />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Linha inicial dos dados</label>
+                    <Input type="number" value={linhaDados} onChange={(e) => setLinhaDados(Number(e.target.value) || 1)} className="h-8" disabled={isSaving} />
+                  </div>
+                </div>
+              </div>
+
+              {baseColumns.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p className="text-sm">Nenhuma coluna configurada</p>
+                  <p className="text-xs mt-1">Clique em "Adicionar Coluna" para começar</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[28%]">{renderHeaderWithHelp("Nome da Coluna Excel", columnHelpText.nomeColunaExcel)}</TableHead>
+                      <TableHead className="w-[28%]">{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
+                      <TableHead>{renderHeaderWithHelp("Tipo da Coluna", columnHelpText.tipoColuna)}</TableHead>
+                      <TableHead className="text-center">{renderHeaderWithHelp("Análise", columnHelpText.analise)}</TableHead>
+                      <TableHead className="w-12"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {baseColumns.map((col) => {
+                      const semantica = getTipoSemantica(col.tipo_coluna);
+                      const isPrincipal = col.tipo_coluna === "Contrato vinculado" || col.tipo_coluna === "Nota fiscal";
+                      return (
+                        <TableRow key={col.id}>
+                          <TableCell>
+                            <Input value={col.nome_coluna_excel} onChange={(e) => updateBaseColumnExcelName(col.id, e.target.value)} className="h-8 w-full" disabled={isSaving} />
+                          </TableCell>
+                          <TableCell>
+                            <Input value={col.apelido} onChange={(e) => updateBaseColumnField(col.id, "apelido", e.target.value)} className="h-8 w-full" disabled={isSaving} />
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1.5">
+                              <Select value={col.tipo_coluna} onValueChange={(value) => updateBaseColumnField(col.id, "tipo_coluna", value)} disabled={isSaving}>
+                                <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {tipoColunaOptions.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                                </SelectContent>
+                              </Select>
+                              <div className="flex flex-wrap items-center gap-1">
+                                <Badge variant={isPrincipal ? "default" : "secondary"} className="h-5 text-[10px]">{semantica.categoria}</Badge>
+                                {semantica.destaque && <span className="text-[10px] text-muted-foreground">{semantica.destaque}</span>}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox checked={col.analise} onCheckedChange={(checked) => updateBaseColumnField(col.id, "analise", !!checked)} disabled={isSaving} />
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeBaseColumn(col.id)} disabled={isSaving}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ========== COMPLEMENTARES TAB (persistência real) ========== */}
+        <TabsContent value="complementares">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="text-base">Layouts Complementares</CardTitle>
+              {!editingComplementar && (
+                <Button size="sm" onClick={startNewComplementar}>
+                  <Plus className="h-4 w-4 mr-1" /> Novo Layout Complementar
+                </Button>
+              )}
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border bg-muted/30 p-3 mb-4 flex items-start gap-2 text-xs text-muted-foreground">
+                <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  O mapeamento complementar segue a mesma semântica da base: Contrato vinculado e Nota fiscal identificam registros.
+                </span>
+              </div>
+
+              {/* Lista de layouts existentes */}
+              {!editingComplementar && complementares.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p className="text-sm">Nenhum layout complementar cadastrado</p>
+                  <p className="text-xs mt-1">Clique em &quot;Novo Layout Complementar&quot; para começar</p>
+                </div>
+              )}
+
+              {!editingComplementar && complementares.length > 0 && (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead className="text-center">Colunas</TableHead>
+                      <TableHead className="text-center">Linha Cabeçalho</TableHead>
+                      <TableHead className="text-center">Linha Dados</TableHead>
+                      <TableHead className="w-24 text-center">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {complementares.map((lc) => (
+                      <TableRow key={lc.layout.id}>
+                        <TableCell className="font-medium">{lc.layout.nome}</TableCell>
+                        <TableCell className="text-center">{lc.colunas.length}</TableCell>
+                        <TableCell className="text-center">{lc.layout.linha_cabecalho}</TableCell>
+                        <TableCell className="text-center">{lc.layout.linha_dados}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-center gap-1">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => startEditComplementar(lc)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost" size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleDeleteComplementar(lc.layout.id)}
+                              disabled={isDeletingId === lc.layout.id}
+                            >
+                              {isDeletingId === lc.layout.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+
+              {/* Formulário de criação/edição */}
+              {editingComplementar && (
+                <div className="space-y-4 border rounded-lg p-4 mt-4">
+                  {complementarValidationErrors.length > 0 && (
+                    <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive space-y-1">
+                      {complementarValidationErrors.map((error) => (
+                        <p key={error}>{error}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-3">
+                    <label className="text-sm font-medium">Nome do Layout Externo:</label>
+                    <Input
+                      value={editingComplementar.layout.nome}
+                      onChange={(e) => setEditingComplementar({
+                        ...editingComplementar,
+                        layout: { ...editingComplementar.layout, nome: e.target.value },
+                      })}
+                      placeholder="Ex: Bunge - Recebimento Rodoviário"
+                      className="h-8 max-w-xs"
+                      disabled={isSavingComplementar}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Linha inicial do cabeçalho</label>
+                      <Input
+                        type="number"
+                        value={editingComplementar.layout.linha_cabecalho}
+                        onChange={(e) => setEditingComplementar({
+                          ...editingComplementar,
+                          layout: { ...editingComplementar.layout, linha_cabecalho: Number(e.target.value) || 1 },
+                        })}
+                        className="h-8"
+                        disabled={isSavingComplementar}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">Linha inicial dos dados</label>
+                      <Input
+                        type="number"
+                        value={editingComplementar.layout.linha_dados}
+                        onChange={(e) => setEditingComplementar({
+                          ...editingComplementar,
+                          layout: { ...editingComplementar.layout, linha_dados: Number(e.target.value) || 1 },
+                        })}
+                        className="h-8"
+                        disabled={isSavingComplementar}
+                      />
+                    </div>
+                  </div>
+
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[25%]">{renderHeaderWithHelp("Coluna Excel", columnHelpText.nomeColunaExcel)}</TableHead>
+                        <TableHead className="w-[25%]">{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
+                        <TableHead>{renderHeaderWithHelp("Tipo da Coluna", columnHelpText.tipoColuna)}</TableHead>
+                        <TableHead className="text-center">{renderHeaderWithHelp("Análise", columnHelpText.analise)}</TableHead>
+                        <TableHead className="w-12"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {editingComplementar.colunas.map((col) => {
+                        const semantica = getTipoSemantica(col.tipo_coluna);
+                        const isPrincipal = col.tipo_coluna === "Contrato vinculado" || col.tipo_coluna === "Nota fiscal";
+                        return (
+                          <TableRow key={col.id}>
+                            <TableCell>
+                              <Input value={col.nome_coluna_excel} onChange={(e) => updateComplementarColExcelName(col.id, e.target.value)} className="h-8" placeholder="Ex: C" disabled={isSavingComplementar} />
+                            </TableCell>
+                            <TableCell>
+                              <Input value={col.apelido} onChange={(e) => updateComplementarCol(col.id, "apelido", e.target.value)} className="h-8" placeholder="Ex: Nota Fiscal" disabled={isSavingComplementar} />
+                            </TableCell>
+                            <TableCell>
+                              <div className="space-y-1.5">
+                                <Select value={col.tipo_coluna} onValueChange={(value) => updateComplementarCol(col.id, "tipo_coluna", value)} disabled={isSavingComplementar}>
+                                  <SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger>
+                                  <SelectContent>
+                                    {tipoColunaOptions.map((t) => (<SelectItem key={t} value={t}>{t}</SelectItem>))}
+                                  </SelectContent>
+                                </Select>
+                                <div className="flex flex-wrap items-center gap-1">
+                                  <Badge variant={isPrincipal ? "default" : "secondary"} className="h-5 text-[10px]">{semantica.categoria}</Badge>
+                                  {semantica.destaque && <span className="text-[10px] text-muted-foreground">{semantica.destaque}</span>}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Checkbox checked={col.analise} onCheckedChange={(checked) => updateComplementarCol(col.id, "analise", !!checked)} disabled={isSavingComplementar} />
+                            </TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeComplementarCol(col.id)} disabled={isSavingComplementar}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={addComplementarCol} disabled={isSavingComplementar}>
+                      <Plus className="h-4 w-4 mr-1" /> Adicionar Coluna
+                    </Button>
+                    <Button size="sm" onClick={handleSaveComplementar} disabled={isSavingComplementar}>
+                      {isSavingComplementar ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
+                      Salvar Layout
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={cancelEditComplementar} disabled={isSavingComplementar}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
       { id: `new-${Date.now()}`, nome_coluna_excel: "", apelido: "", tipo_coluna: "Data da nota", analise: true, ordem: newLayoutCols.length, _isNew: true },
     ]);
   };
