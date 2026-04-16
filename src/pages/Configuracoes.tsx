@@ -9,15 +9,20 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { layoutsComplementares } from "@/data/mock";
-import { Plus, Save, Trash2, Info, HelpCircle, Loader2 } from "lucide-react";
+import { Plus, Save, Trash2, Info, HelpCircle, Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchLayoutBase,
   saveLayoutBase,
   LayoutBaseColuna,
-  LayoutBase,
 } from "@/services/layoutBaseService";
+import {
+  fetchLayoutsComplementares,
+  saveLayoutComplementar,
+  deleteLayoutComplementar,
+  LayoutComplementarColuna,
+  LayoutComplementarCompleto,
+} from "@/services/layoutComplementarService";
 
 // --- Helpers de apelido automático ---
 const toFriendlyAlias = (value: string) => {
