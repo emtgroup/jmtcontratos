@@ -6,12 +6,20 @@ import type { LinhaParseada, ResumoImportacao } from "@/types/importacao";
 const TIPOS_OBRIGATORIOS = ["contrato_vinculado", "nota_fiscal"] as const;
 const TIPO_PLACA = "placa";
 
+// Normaliza tipo_coluna: "Contrato vinculado" → "contrato_vinculado"
+function normalizaTipo(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+// Normaliza texto de cabeçalho para comparação
+function normalizaHeader(s: string): string {
+  return String(s ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+}
+
 // Converte letra Excel (A, B, ..., Z, AA, AB, ...) em índice 0-based
 function letraParaIndice(letra: string): number {
   const up = letra.trim().toUpperCase();
-  if (!/^[A-Z]+$/.test(up)) {
-    throw new Error(`Coluna "${letra}" não é uma letra Excel válida (use A, B, C, ..., AA, AB, etc.)`);
-  }
+  if (!/^[A-Z]+$/.test(up)) return -1;
   let result = 0;
   for (let i = 0; i < up.length; i++) {
     result = result * 26 + (up.charCodeAt(i) - 64);
@@ -21,12 +29,16 @@ function letraParaIndice(letra: string): number {
 
 interface LayoutResolvido {
   layoutId: string;
-  linhaCabecalho: number; // 1-based como no banco
-  linhaDados: number;     // 1-based
-  // tipo_coluna -> índice 0-based no array da linha
+  linhaCabecalho: number;
+  linhaDados: number;
+  colunas: Array<{
+    tipoNormalizado: string;
+    nomeExcel: string;
+  }>;
+}
+
+interface LayoutComIndices extends LayoutResolvido {
   indicePorTipo: Map<string, number>;
-  // tipo_coluna -> letra original (para mensagens de erro)
-  letraPorTipo: Map<string, string>;
 }
 
 async function carregarLayoutAtivo(): Promise<LayoutResolvido> {
@@ -52,30 +64,58 @@ async function carregarLayoutAtivo(): Promise<LayoutResolvido> {
     throw new Error("Layout base ativo não possui colunas configuradas. Configure em /configuracoes.");
   }
 
-  // Validar tipos obrigatórios (exatamente 1 de cada)
+  // Normalizar tipos e validar obrigatórios
+  const colunasNorm = colunas.map(c => ({
+    tipoNormalizado: normalizaTipo(c.tipo_coluna),
+    nomeExcel: c.nome_coluna_excel,
+  }));
+
   const contagem = new Map<string, number>();
-  for (const c of colunas) contagem.set(c.tipo_coluna, (contagem.get(c.tipo_coluna) || 0) + 1);
+  for (const c of colunasNorm) contagem.set(c.tipoNormalizado, (contagem.get(c.tipoNormalizado) || 0) + 1);
+
   for (const tipo of TIPOS_OBRIGATORIOS) {
     const n = contagem.get(tipo) || 0;
-    if (n === 0) throw new Error(`Layout base inválido: tipo "${tipo}" ausente.`);
+    if (n === 0) {
+      const tiposEncontrados = [...new Set(colunasNorm.map(c => c.tipoNormalizado))].join(", ");
+      throw new Error(`Layout base inválido: tipo "${tipo}" ausente. Tipos configurados: [${tiposEncontrados}]`);
+    }
     if (n > 1) throw new Error(`Layout base inválido: tipo "${tipo}" duplicado (${n} colunas).`);
-  }
-
-  const indicePorTipo = new Map<string, number>();
-  const letraPorTipo = new Map<string, string>();
-  for (const c of colunas) {
-    const idx = letraParaIndice(c.nome_coluna_excel);
-    indicePorTipo.set(c.tipo_coluna, idx);
-    letraPorTipo.set(c.tipo_coluna, c.nome_coluna_excel.toUpperCase());
   }
 
   return {
     layoutId: layout.id,
     linhaCabecalho: layout.linha_cabecalho,
     linhaDados: layout.linha_dados,
-    indicePorTipo,
-    letraPorTipo,
+    colunas: colunasNorm,
   };
+}
+
+function resolverIndices(layout: LayoutResolvido, headerRow: unknown[]): LayoutComIndices {
+  const headersNorm = headerRow.map(h => normalizaHeader(String(h ?? "")));
+  const indicePorTipo = new Map<string, number>();
+
+  for (const col of layout.colunas) {
+    const nomeNorm = normalizaHeader(col.nomeExcel);
+
+    // Tentar encontrar pelo nome do cabeçalho
+    let idx = headersNorm.indexOf(nomeNorm);
+
+    // Fallback: se parece letra Excel (A, B, AA...) e não achou como header, usar como letra
+    if (idx === -1 && /^[A-Z]+$/.test(col.nomeExcel.trim().toUpperCase())) {
+      idx = letraParaIndice(col.nomeExcel);
+    }
+
+    if (idx === -1) {
+      const disponiveis = headersNorm.filter(h => h.length > 0).join(", ");
+      throw new Error(
+        `Coluna "${col.nomeExcel}" (${col.tipoNormalizado}) não encontrada no cabeçalho da linha ${layout.linhaCabecalho}. Cabeçalhos disponíveis: [${disponiveis}]`
+      );
+    }
+
+    indicePorTipo.set(col.tipoNormalizado, idx);
+  }
+
+  return { ...layout, indicePorTipo };
 }
 
 export async function parseExcelFile(file: File, layout: LayoutResolvido): Promise<LinhaParseada[]> {
@@ -87,24 +127,16 @@ export async function parseExcelFile(file: File, layout: LayoutResolvido): Promi
   const rawData: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
 
   if (rawData.length < layout.linhaDados) {
-    throw new Error(`Arquivo possui ${rawData.length} linhas, mas o layout exige cabeçalho na linha ${layout.linhaCabecalho} e dados a partir da linha ${layout.linhaDados}.`);
+    throw new Error(`Arquivo possui ${rawData.length} linhas, mas o layout exige dados a partir da linha ${layout.linhaDados}.`);
   }
 
   const headerRow = (rawData[layout.linhaCabecalho - 1] || []) as unknown[];
+  const resolved = resolverIndices(layout, headerRow);
+
   const dataRows = rawData.slice(layout.linhaDados - 1);
-
-  const contratoIdx = layout.indicePorTipo.get("contrato_vinculado")!;
-  const notaIdx = layout.indicePorTipo.get("nota_fiscal")!;
-  const placaIdx = layout.indicePorTipo.get(TIPO_PLACA);
-
-  // Valida que as colunas existem na planilha (índice dentro do header)
-  const maxColPlanilha = Math.max(headerRow.length, ...dataRows.map(r => r.length)) - 1;
-  for (const tipo of TIPOS_OBRIGATORIOS) {
-    const idx = layout.indicePorTipo.get(tipo)!;
-    if (idx > maxColPlanilha) {
-      throw new Error(`Coluna "${layout.letraPorTipo.get(tipo)}" (${tipo}) não existe na planilha — arquivo só vai até a coluna ${maxColPlanilha + 1}.`);
-    }
-  }
+  const contratoIdx = resolved.indicePorTipo.get("contrato_vinculado")!;
+  const notaIdx = resolved.indicePorTipo.get("nota_fiscal")!;
+  const placaIdx = resolved.indicePorTipo.get(TIPO_PLACA);
 
   const linhas: LinhaParseada[] = [];
   for (const row of dataRows) {
@@ -135,18 +167,15 @@ export type EtapaProgresso = "lendo" | "validando" | "enviando" | "processando";
 export type OnEtapa = (etapa: EtapaProgresso) => void;
 
 export async function importarBase(file: File, onEtapa?: OnEtapa): Promise<ResumoImportacao> {
-  // 1. Validando layout (busca do banco)
   onEtapa?.("validando");
   const layout = await carregarLayoutAtivo();
 
-  // 2. Lendo arquivo
   onEtapa?.("lendo");
   const linhas = await parseExcelFile(file, layout);
   if (linhas.length === 0) {
     throw new Error("Nenhuma linha operacional válida encontrada no arquivo (verifique linha de dados e colunas obrigatórias).");
   }
 
-  // 3. Enviando para o backend
   onEtapa?.("enviando");
   onEtapa?.("processando");
   const { data, error } = await supabase.functions.invoke("importar-base", {
@@ -154,7 +183,6 @@ export async function importarBase(file: File, onEtapa?: OnEtapa): Promise<Resum
   });
 
   if (error) {
-    // Tenta extrair erro real do corpo da resposta
     let detalhe = error.message || "Erro desconhecido na função";
     try {
       const ctx = (error as unknown as { context?: { json?: () => Promise<{ error?: string }> } }).context;
