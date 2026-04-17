@@ -1,84 +1,90 @@
 
 
-# Plano: CRUD Real dos Layouts Complementares
+# Plano: Corrigir Importação Base GRL053 (causa raiz + UX)
 
-## Diagnóstico
+## Diagnóstico (causa real)
 
-A aba "Layouts Complementares" em `Configuracoes.tsx` é **100% mock**:
-- Importa `layoutsComplementares` de `src/data/mock.ts` (linha 12)
-- O formulário de novo layout não vincula inputs a estado (linhas 492-493 usam `<Input>` sem `value`/`onChange`)
-- Não existe serviço de persistência para complementares
-- O botão "Salvar Layout" não faz nada
-- Não há carregamento do banco, não há exclusão real
+Estado atual no banco confirma o problema:
+- Última importação: `GRL053 COOPERAGRO.xlsx`, **6410 linhas**, status `em_andamento`, 0 inseridos, **lock travado** desde então.
+- Apenas 4 registros na base (testes antigos).
 
-As tabelas `layouts_complementares` e `layouts_complementares_colunas` já existem no banco (com FK cascade), mas estão vazias e sem uso.
+**Causas reais, em ordem de impacto:**
 
-## Etapa 1 — Criar serviço de persistência
+1. **Edge Function processa linha-a-linha com 2–3 round-trips por linha** (SELECT → INSERT/UPDATE → upsert conferência). 6410 linhas ≈ **19.000+ chamadas HTTP ao Postgres**. Estoura o limite de tempo da Edge Function (~150s wall-clock) muito antes de terminar. Esse é o motivo do "trava e falha no final".
+2. **Layout fixo no frontend** (`LAYOUT_BASE_DEFAULT` em `importacaoBaseService.ts`) ignora completamente `layouts_base_colunas` salvo em /configuracoes. Para um GRL053 real (cabeçalho na linha 2, dados na linha 3), o parser também lê a partir da linha errada.
+3. **Lock fica preso** quando a função morre por timeout — não existe nenhum mecanismo automático de release (o `catch` só roda se a função retornar; timeout kill não dispara `catch`).
+4. **Erros silenciados**: `catch { erros++ }` engole exceções reais; o front mostra "Erro desconhecido" porque `supabase.functions.invoke` envelopa em `FunctionsHttpError`.
+5. **Sem progresso visual** durante a importação.
 
-Criar `src/services/layoutComplementarService.ts` espelhando o padrão do `layoutBaseService.ts`:
+## Correção mínima e segura
 
-- `fetchLayoutsComplementares()` — busca todos os layouts ativos + colunas de cada um
-- `saveLayoutComplementar(layout, colunas)` — upsert layout + sincronização de colunas (mesmo padrão: buscar IDs atuais, deletar removidos, insert/update restantes, recarregar do banco)
-- `deleteLayoutComplementar(id)` — deleta o layout (FK cascade remove colunas automaticamente)
+### 1. Edge Function — eliminar N round-trips (prioridade #1: integridade + performance)
 
-Diferenças em relação ao base:
-- Pode existir N layouts complementares (não apenas 1)
-- Nome do layout é obrigatório e editável
-- Cada layout tem seus próprios `linha_cabecalho` e `linha_dados`
+Reescrever `supabase/functions/importar-base/index.ts` para usar **batches**:
 
-## Etapa 2 — Reescrever a aba complementar em `Configuracoes.tsx`
+- **1 SELECT** trazendo todas as `chave_normalizada` já existentes para o conjunto de chaves do arquivo (`.in('chave_normalizada', chavesDoArquivo)`), em chunks de 1000 (limite do PostgREST).
+- Comparar em memória (Map) → classificar cada linha em **inserir / atualizar / ignorar**.
+- **INSERT em batch** (chunks de 500) usando `.insert([...])`.
+- **UPSERT em batch** em `conferencia` apenas para as chaves novas (status `aguardando`).
+- **UPDATE**: agrupar e executar em chunks; manter por linha apenas onde `dadosChanged`.
+- Resultado: para 6410 linhas → ~30 chamadas totais ao DB em vez de 19.000. Vai concluir em poucos segundos.
 
-Substituir toda a seção mock (linhas 431-535) por implementação real:
+### 2. Edge Function — tornar lock à prova de timeout
 
-**Estado:**
-- `complementares: LayoutComplementarCompleto[]` — lista carregada do banco
-- `editingLayout: { layout, colunas } | null` — layout em edição/criação
-- `isSavingComplementar`, `isDeletingId`
+- Antes de adquirir o lock, checar se `locked_at` é mais antigo que **5 minutos** → tratar como lock órfão e liberar automaticamente.
+- Liberar lock também em qualquer caminho de erro (já existe; manter).
 
-**Carregamento:**
-- `useEffect` busca todos os layouts complementares do banco ao montar (junto com o base)
+### 3. Edge Function — propagar erros reais
 
-**Lista de layouts existentes:**
-- Tabela com Nome, Qtd Colunas, Ações (Editar / Excluir)
-- Editar abre o formulário preenchido
-- Excluir chama `deleteLayoutComplementar` e recarrega
+- Trocar `catch { erros++ }` por `catch (e) { erros++; primeiroErro ??= e.message; }` e devolver `primeiro_erro` no resumo.
+- Front exibe a mensagem técnica real (coluna X, constraint, etc.).
 
-**Formulário (criar/editar):**
-- Nome do layout (obrigatório)
-- Linha cabeçalho / linha dados
-- Tabela de colunas com inputs vinculados a estado (nome Excel, apelido, tipo, análise)
-- Botões: Adicionar Coluna, Salvar, Cancelar
-- Mesmas validações do base: exatamente 1 "Contrato vinculado", 1 "Nota fiscal", sem nome vazio, sem duplicata
+### 4. Frontend service — ler layout REAL do banco
 
-**Salvamento:**
-- Validar antes
-- Chamar `saveLayoutComplementar()`
-- Erro → toast de erro
-- Sucesso → recarregar lista do banco → toast de sucesso → fechar formulário
+`src/services/importacaoBaseService.ts`:
 
-## Etapa 3 — Remover dependência de mock
+- Buscar `layouts_base` ativo + `layouts_base_colunas` antes do parse.
+- Validar que existe **exatamente 1** coluna do tipo `contrato_vinculado` e **1** de `nota_fiscal` (regra do PRD); se não → erro claro: `"Layout base inválido: tipo X ausente/duplicado"`.
+- Usar `linha_cabecalho` e `linha_dados` do layout (não mais hardcoded).
+- Mapear coluna por **letra do Excel salva como `nome_coluna_excel`** (ex: "A", "B", "AC"). Se o usuário salvou nome textual em vez de letra → erro claro: `"Coluna 'X' não é uma letra Excel válida"`.
+- Validar antes do upload: se alguma coluna obrigatória não existir na planilha → erro com nome da coluna.
 
-- Remover import de `layoutsComplementares` do `Configuracoes.tsx`
-- No `Dashboard.tsx`, substituir contagem mock por dado real (ou manter mock apenas lá, pois Dashboard está fora de escopo — decisão: manter mock no Dashboard por ora, não alterar outras telas)
+### 5. Frontend page — feedback de progresso real
 
-## Etapa 4 — Validar consistência com Layout Base
+`src/pages/Importacao.tsx`:
 
-Garantir que o serviço complementar segue exatamente o mesmo padrão:
-- Mesmo fluxo de sync de colunas (buscar IDs → deletar removidos → upsert restantes → recarregar)
-- Mesmas validações
-- Mesmo comportamento de recarregamento pós-save
-- Mesmos feedbacks de toast
+- Adicionar estado `etapa: 'lendo' | 'validando' | 'enviando' | 'processando' | null`.
+- Mostrar texto da etapa + spinner. (Sem WebSocket: a etapa "processando" cobre todo o tempo da Edge Function, mas com a otimização de batch isso vira ~5–10s, aceitável.)
+- Mensagem de erro **bruta**, sem mascarar.
+- Adicionar botão "Liberar lock travado" (chama uma função mínima que faz `update import_lock set locked=false where id=1 and locked_at < now()-interval '5 min'`) — fallback manual.
+
+### 6. Liberar lock atual travado
+
+Migration (uma linha): `UPDATE import_lock SET locked=false, locked_at=null, importacao_id=null WHERE id=1;` — para destravar o estado atual.
+Junto: marcar a importação `em_andamento` órfã como `falhou`.
+
+## Fora deste escopo (não tocar)
+
+- Importação complementar (continua desabilitada na UI)
+- Matching/diagnóstico secundário (próxima entrega)
+- Redesign visual da tela
+- Refatoração da arquitetura
+- Conferência (continua só `aguardando` no insert)
 
 ## Arquivos alterados
 
-| Arquivo | Ação |
-|---------|------|
-| `src/services/layoutComplementarService.ts` | Novo — CRUD completo |
-| `src/pages/Configuracoes.tsx` | Reescrever aba complementar com persistência real |
+| Arquivo | Mudança |
+|---|---|
+| `supabase/functions/importar-base/index.ts` | Reescrita com batching + lock órfão + erro real |
+| `src/services/importacaoBaseService.ts` | Ler layout real do banco; validações antes do upload |
+| `src/pages/Importacao.tsx` | Estados de etapa + erro bruto + botão liberar lock |
+| Nova migration | Destrava lock atual + marca importação órfã como `falhou` |
 
-## Fora de escopo
-- Dashboard (mantém mock)
-- Importação, conferência, matching
-- Modal de confirmação de exclusão (UX futuro)
-- Refatoração do layout base (já funcional)
+## Resultado esperado
+
+- 6410 linhas importadas em **<10s** (vs. timeout atual).
+- Nenhum lock preso após falha.
+- Erro mostra coluna/linha/constraint reais.
+- Progresso visível por etapa.
+- Layout vem de /configuracoes (não mais hardcoded).
 
