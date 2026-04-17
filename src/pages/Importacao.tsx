@@ -3,20 +3,27 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, Upload, Loader2, AlertCircle } from "lucide-react";
-import { importarBase } from "@/services/importacaoBaseService";
+import { CheckCircle, Upload, Loader2, AlertCircle, Unlock } from "lucide-react";
+import { importarBase, liberarLockOrfao, type EtapaProgresso } from "@/services/importacaoBaseService";
 import type { ResumoImportacao } from "@/types/importacao";
 import { useToast } from "@/hooks/use-toast";
+
+const LABEL_ETAPA: Record<EtapaProgresso, string> = {
+  validando: "Validando layout configurado…",
+  lendo: "Lendo arquivo Excel…",
+  enviando: "Enviando dados para o backend…",
+  processando: "Processando no servidor (insert/update em lote)…",
+};
 
 export default function Importacao() {
   const [resumo, setResumo] = useState<ResumoImportacao | null>(null);
   const [layoutSelecionado, setLayoutSelecionado] = useState("");
   const [arquivoBase, setArquivoBase] = useState<File | null>(null);
-  const [arquivoComplementar, setArquivoComplementar] = useState<File | null>(null);
   const [importando, setImportando] = useState(false);
+  const [etapa, setEtapa] = useState<EtapaProgresso | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [liberandoLock, setLiberandoLock] = useState(false);
   const fileInputBase = useRef<HTMLInputElement>(null);
-  const fileInputCompl = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
   const handleImportBase = async () => {
@@ -24,27 +31,51 @@ export default function Importacao() {
     setImportando(true);
     setErro(null);
     setResumo(null);
+    setEtapa(null);
 
     try {
-      const result = await importarBase(arquivoBase);
+      const result = await importarBase(arquivoBase, (e) => setEtapa(e));
       setResumo(result);
-      toast({ title: "Importação concluída", description: `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados` });
+      const extra = result.primeiro_erro ? ` (1º erro: ${result.primeiro_erro})` : "";
+      toast({
+        title: "Importação concluída",
+        description: `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados, ${result.erros} erros${extra}`,
+      });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Erro desconhecido";
+      const msg = e instanceof Error ? e.message : String(e);
       setErro(msg);
       toast({ title: "Erro na importação", description: msg, variant: "destructive" });
     } finally {
       setImportando(false);
+      setEtapa(null);
     }
   };
 
-  const resumoItems = resumo ? [
-    { label: "Total de linhas", value: resumo.total_linhas },
-    { label: "Inseridos", value: resumo.inseridos },
-    { label: "Atualizados", value: resumo.atualizados },
-    { label: "Ignorados", value: resumo.ignorados },
-    { label: "Erros", value: resumo.erros },
-  ] : [];
+  const handleLiberarLock = async () => {
+    setLiberandoLock(true);
+    try {
+      const ok = await liberarLockOrfao();
+      toast({
+        title: ok ? "Lock liberado" : "Sem lock ativo",
+        description: ok ? "Você já pode iniciar uma nova importação." : "Nenhum lock estava preso.",
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: "Não foi possível liberar o lock", description: msg, variant: "destructive" });
+    } finally {
+      setLiberandoLock(false);
+    }
+  };
+
+  const resumoItems = resumo
+    ? [
+        { label: "Total de linhas", value: resumo.total_linhas },
+        { label: "Inseridos", value: resumo.inseridos },
+        { label: "Atualizados", value: resumo.atualizados },
+        { label: "Ignorados", value: resumo.ignorados },
+        { label: "Erros", value: resumo.erros },
+      ]
+    : [];
 
   return (
     <div>
@@ -58,7 +89,7 @@ export default function Importacao() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Etapa 1: carregue o relatório base oficial (GRL053). Os dados serão persistidos de forma incremental.
+              Etapa 1: carregue o relatório base oficial (GRL053). Layout é lido de /configuracoes. Importação incremental — nunca destrutiva.
             </p>
             <input
               ref={fileInputBase}
@@ -81,12 +112,34 @@ export default function Importacao() {
                 </>
               )}
             </div>
+
+            {/* Progresso por etapa */}
+            {importando && etapa && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>{LABEL_ETAPA[etapa]}</span>
+              </div>
+            )}
+
+            <Button className="w-full" onClick={handleImportBase} disabled={!arquivoBase || importando}>
+              {importando ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importando...
+                </>
+              ) : (
+                "Importar Base"
+              )}
+            </Button>
+
             <Button
-              className="w-full"
-              onClick={handleImportBase}
-              disabled={!arquivoBase || importando}
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs text-muted-foreground"
+              onClick={handleLiberarLock}
+              disabled={liberandoLock || importando}
             >
-              {importando ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importando...</> : "Importar Base"}
+              <Unlock className="h-3.5 w-3.5 mr-1.5" />
+              {liberandoLock ? "Verificando lock..." : "Liberar lock travado (>5 min)"}
             </Button>
           </CardContent>
         </Card>
@@ -101,7 +154,9 @@ export default function Importacao() {
               Etapa 2 (em breve): importação complementar será habilitada na próxima entrega.
             </p>
             <div>
-              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">Layout complementar</label>
+              <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">
+                Layout complementar
+              </label>
               <Select value={layoutSelecionado} onValueChange={setLayoutSelecionado} disabled>
                 <SelectTrigger>
                   <SelectValue placeholder="Disponível na próxima etapa" />
@@ -120,13 +175,16 @@ export default function Importacao() {
         </Card>
       </div>
 
-      {/* Erro */}
+      {/* Erro bruto */}
       {erro && (
         <Card className="border-l-4 border-l-[hsl(var(--status-divergente))] mb-6">
           <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-[hsl(var(--status-divergente))]">
-              <AlertCircle className="h-5 w-5" />
-              <p className="text-sm font-medium">{erro}</p>
+            <div className="flex items-start gap-2 text-[hsl(var(--status-divergente))]">
+              <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Falha na importação</p>
+                <p className="text-xs font-mono whitespace-pre-wrap break-words">{erro}</p>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -150,6 +208,11 @@ export default function Importacao() {
                 </div>
               ))}
             </div>
+            {resumo.primeiro_erro && (
+              <div className="mt-4 text-xs text-muted-foreground font-mono bg-muted/40 rounded-md px-3 py-2 break-words">
+                <span className="font-semibold">1º erro:</span> {resumo.primeiro_erro}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
