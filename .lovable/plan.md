@@ -1,90 +1,80 @@
 
+# Plano: Corrigir desalinhamento entre Configurações e Importação Base
 
-# Plano: Corrigir Importação Base GRL053 (causa raiz + UX)
+## Diagnóstico (causa raiz)
 
-## Diagnóstico (causa real)
+O erro `Layout base inválido: tipo "contrato_vinculado" ausente` é real. Ele acontece porque há **dois desalinhamentos** entre o que `Configuracoes.tsx` salva e o que `importacaoBaseService.ts` espera:
 
-Estado atual no banco confirma o problema:
-- Última importação: `GRL053 COOPERAGRO.xlsx`, **6410 linhas**, status `em_andamento`, 0 inseridos, **lock travado** desde então.
-- Apenas 4 registros na base (testes antigos).
+### Bug 1 — `tipo_coluna`: caixa e formato diferentes
 
-**Causas reais, em ordem de impacto:**
+- **Tela salva**: `"Contrato vinculado"`, `"Nota fiscal"`, `"Placa"` (texto legível, com espaço e maiúscula — ver `tipoColunaOptions` linha 35–49 de Configuracoes.tsx).
+- **Service compara com**: `"contrato_vinculado"`, `"nota_fiscal"`, `"placa"` (snake_case, linha 6–7 de `importacaoBaseService.ts`).
+- **Resultado**: `contagem.get("contrato_vinculado")` retorna `0` → erro "ausente".
 
-1. **Edge Function processa linha-a-linha com 2–3 round-trips por linha** (SELECT → INSERT/UPDATE → upsert conferência). 6410 linhas ≈ **19.000+ chamadas HTTP ao Postgres**. Estoura o limite de tempo da Edge Function (~150s wall-clock) muito antes de terminar. Esse é o motivo do "trava e falha no final".
-2. **Layout fixo no frontend** (`LAYOUT_BASE_DEFAULT` em `importacaoBaseService.ts`) ignora completamente `layouts_base_colunas` salvo em /configuracoes. Para um GRL053 real (cabeçalho na linha 2, dados na linha 3), o parser também lê a partir da linha errada.
-3. **Lock fica preso** quando a função morre por timeout — não existe nenhum mecanismo automático de release (o `catch` só roda se a função retornar; timeout kill não dispara `catch`).
-4. **Erros silenciados**: `catch { erros++ }` engole exceções reais; o front mostra "Erro desconhecido" porque `supabase.functions.invoke` envelopa em `FunctionsHttpError`.
-5. **Sem progresso visual** durante a importação.
+Confirmado no banco:
+```
+tipo_coluna = "Contrato vinculado"  ← gravado pela tela
+tipo_coluna = "Nota fiscal"
+tipo_coluna = "Placa"
+```
+
+### Bug 2 — `nome_coluna_excel`: nome de cabeçalho em vez de letra
+
+- **Tela salva**: `"CONTR. CLIENTE"`, `"NOTA"`, `"PLACA"` (texto do cabeçalho da planilha).
+- **Service espera**: `"A"`, `"B"`, `"D"` (letra Excel) e chama `letraParaIndice()` que **lança erro** se não for `[A-Z]+`.
+- Mesmo se o Bug 1 fosse corrigido, o próximo erro seria: `Coluna "CONTR. CLIENTE" não é uma letra Excel válida`.
+
+### Por que isso aconteceu
+
+A entrega anterior assumiu que o usuário digitaria letras Excel (`A`, `B`, `C`). Mas a tela de Configurações sempre tratou esse campo como **nome da coluna do cabeçalho** (label exibido "Nome da Coluna no Excel", placeholder tipo "EMPRESA"). O usuário usou exatamente como a interface sugeria.
+
+A interpretação correta, alinhada com o PRD ("workspace trabalha com campos lógicos mapeados a partir do cabeçalho"), é: o `nome_coluna_excel` é o **texto do cabeçalho** que deve ser localizado na linha de cabeçalho da planilha.
 
 ## Correção mínima e segura
 
-### 1. Edge Function — eliminar N round-trips (prioridade #1: integridade + performance)
+Ajustar **apenas** `src/services/importacaoBaseService.ts`. Nenhuma migration, nenhuma alteração em Configurações, nenhum reset de dados.
 
-Reescrever `supabase/functions/importar-base/index.ts` para usar **batches**:
+### Mudança 1 — Normalizar `tipo_coluna` na comparação
 
-- **1 SELECT** trazendo todas as `chave_normalizada` já existentes para o conjunto de chaves do arquivo (`.in('chave_normalizada', chavesDoArquivo)`), em chunks de 1000 (limite do PostgREST).
-- Comparar em memória (Map) → classificar cada linha em **inserir / atualizar / ignorar**.
-- **INSERT em batch** (chunks de 500) usando `.insert([...])`.
-- **UPSERT em batch** em `conferencia` apenas para as chaves novas (status `aguardando`).
-- **UPDATE**: agrupar e executar em chunks; manter por linha apenas onde `dadosChanged`.
-- Resultado: para 6410 linhas → ~30 chamadas totais ao DB em vez de 19.000. Vai concluir em poucos segundos.
+Criar um helper `normalizaTipo(s)` que faz `s.trim().toLowerCase().replace(/\s+/g, "_")`.
+- `"Contrato vinculado"` → `"contrato_vinculado"` ✓
+- `"Nota fiscal"` → `"nota_fiscal"` ✓
+- `"Placa"` → `"placa"` ✓
+- `"contrato_vinculado"` (compatibilidade reversa) → `"contrato_vinculado"` ✓
 
-### 2. Edge Function — tornar lock à prova de timeout
+Aplicar na hora de montar `contagem` e `indicePorTipo`. A constante `TIPOS_OBRIGATORIOS` já está em snake_case, mantém.
 
-- Antes de adquirir o lock, checar se `locked_at` é mais antigo que **5 minutos** → tratar como lock órfão e liberar automaticamente.
-- Liberar lock também em qualquer caminho de erro (já existe; manter).
+### Mudança 2 — Resolver coluna por nome de cabeçalho (não por letra)
 
-### 3. Edge Function — propagar erros reais
+Substituir `letraParaIndice(nome_coluna_excel)` por uma busca posicional:
 
-- Trocar `catch { erros++ }` por `catch (e) { erros++; primeiroErro ??= e.message; }` e devolver `primeiro_erro` no resumo.
-- Front exibe a mensagem técnica real (coluna X, constraint, etc.).
+1. Ler `headerRow` da planilha (linha `linha_cabecalho`).
+2. Para cada coluna configurada, normalizar `nome_coluna_excel` (trim + uppercase + colapsar espaços) e procurar índice correspondente em `headerRow` normalizado igual.
+3. Se não achar → erro claro: `Coluna "CONTR. CLIENTE" (contrato_vinculado) não encontrada no cabeçalho da linha X. Cabeçalhos disponíveis: [...]`.
+4. **Compatibilidade reversa**: se `nome_coluna_excel` casar com `^[A-Z]+$` E não for encontrado como cabeçalho, tentar interpretar como letra Excel (preserva configurações antigas que usaram letras).
 
-### 4. Frontend service — ler layout REAL do banco
+Isso exige reordenar o fluxo: ler o arquivo **primeiro**, depois resolver índices contra o header real (hoje resolve antes de abrir o arquivo). Mudança pequena.
 
-`src/services/importacaoBaseService.ts`:
+### Mudança 3 — Mensagens de erro mais úteis
 
-- Buscar `layouts_base` ativo + `layouts_base_colunas` antes do parse.
-- Validar que existe **exatamente 1** coluna do tipo `contrato_vinculado` e **1** de `nota_fiscal` (regra do PRD); se não → erro claro: `"Layout base inválido: tipo X ausente/duplicado"`.
-- Usar `linha_cabecalho` e `linha_dados` do layout (não mais hardcoded).
-- Mapear coluna por **letra do Excel salva como `nome_coluna_excel`** (ex: "A", "B", "AC"). Se o usuário salvou nome textual em vez de letra → erro claro: `"Coluna 'X' não é uma letra Excel válida"`.
-- Validar antes do upload: se alguma coluna obrigatória não existir na planilha → erro com nome da coluna.
+- "tipo X ausente" → listar tipos encontrados no layout para o usuário ver o que tem configurado.
+- Manter erros brutos (sem mascarar).
 
-### 5. Frontend page — feedback de progresso real
+## Fora de escopo
 
-`src/pages/Importacao.tsx`:
+- Não alterar `Configuracoes.tsx` (a UX atual está correta e alinhada com PRD).
+- Não alterar banco / migrations.
+- Não tocar em complementares, matching, conferência, edge function de batching.
+- Não alterar regras de negócio (chave continua `contrato_vinculado + nota_fiscal`).
 
-- Adicionar estado `etapa: 'lendo' | 'validando' | 'enviando' | 'processando' | null`.
-- Mostrar texto da etapa + spinner. (Sem WebSocket: a etapa "processando" cobre todo o tempo da Edge Function, mas com a otimização de batch isso vira ~5–10s, aceitável.)
-- Mensagem de erro **bruta**, sem mascarar.
-- Adicionar botão "Liberar lock travado" (chama uma função mínima que faz `update import_lock set locked=false where id=1 and locked_at < now()-interval '5 min'`) — fallback manual.
-
-### 6. Liberar lock atual travado
-
-Migration (uma linha): `UPDATE import_lock SET locked=false, locked_at=null, importacao_id=null WHERE id=1;` — para destravar o estado atual.
-Junto: marcar a importação `em_andamento` órfã como `falhou`.
-
-## Fora deste escopo (não tocar)
-
-- Importação complementar (continua desabilitada na UI)
-- Matching/diagnóstico secundário (próxima entrega)
-- Redesign visual da tela
-- Refatoração da arquitetura
-- Conferência (continua só `aguardando` no insert)
-
-## Arquivos alterados
+## Arquivo alterado
 
 | Arquivo | Mudança |
 |---|---|
-| `supabase/functions/importar-base/index.ts` | Reescrita com batching + lock órfão + erro real |
-| `src/services/importacaoBaseService.ts` | Ler layout real do banco; validações antes do upload |
-| `src/pages/Importacao.tsx` | Estados de etapa + erro bruto + botão liberar lock |
-| Nova migration | Destrava lock atual + marca importação órfã como `falhou` |
+| `src/services/importacaoBaseService.ts` | Normalização de `tipo_coluna` + resolução por header (com fallback para letra Excel) |
 
 ## Resultado esperado
 
-- 6410 linhas importadas em **<10s** (vs. timeout atual).
-- Nenhum lock preso após falha.
-- Erro mostra coluna/linha/constraint reais.
-- Progresso visível por etapa.
-- Layout vem de /configuracoes (não mais hardcoded).
-
+- Importação do `GRL053 COOPERAGRO.xlsx` passa a funcionar com o layout atual configurado em /configuracoes (sem o usuário precisar reconfigurar nada).
+- Erro fica explícito e útil quando cabeçalho não bate.
+- Configurações antigas com letras Excel continuam funcionando (compat reversa).
