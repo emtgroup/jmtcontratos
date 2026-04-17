@@ -5,6 +5,7 @@ export interface ResumoImportacao {
   atualizados: number;
   ignorados: number;
   erros: number;
+  primeiro_erro?: string | null;
 }
 
 export interface LinhaParseada {
