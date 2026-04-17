@@ -150,7 +150,8 @@ Deno.serve(async (req) => {
     const todasChaves = processadas.map(p => p.chave);
     const existentesMap = new Map<string, { id: string; contrato_vinculado: string; nota_fiscal: string; placa_normalizada: string | null; dados_originais: unknown }>();
 
-    for (const chunkChaves of chunk(todasChaves, 1000)) {
+    // Chunk pequeno: cada chave ~14 chars vira ~30 chars URL-encoded; 150 keys ≈ 5KB de URL (limite seguro do PostgREST)
+    for (const chunkChaves of chunk(todasChaves, 150)) {
       const { data: existentes, error: selErr } = await supabase
         .from("registros_base")
         .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada, dados_originais")
