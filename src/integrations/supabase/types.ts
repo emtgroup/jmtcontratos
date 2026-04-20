@@ -334,7 +334,18 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      vw_conferencia_tela: {
+        Row: {
+          chave_normalizada: string | null
+          contrato_vinculado: string | null
+          id: string | null
+          nota_fiscal: string | null
+          origem: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never
