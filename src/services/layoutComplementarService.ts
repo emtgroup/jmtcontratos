@@ -80,7 +80,22 @@ export async function fetchLayoutsComplementares(): Promise<LayoutComplementarCo
     colunasMap.set(c.layout_complementar_id, arr);
   }
 
-  return layouts.map((layout) => ({
+  // Mantém 1 layout ativo por nome (o mais recente), alinhando edição com a seleção usada na importação.
+  const maisRecentePorNome = new Map<string, (typeof layouts)[number]>();
+  const layoutsDesc = [...layouts].sort((a, b) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+  for (const layout of layoutsDesc) {
+    if (!maisRecentePorNome.has(layout.nome)) {
+      maisRecentePorNome.set(layout.nome, layout);
+    }
+  }
+
+  const layoutsCanonicos = [...maisRecentePorNome.values()].sort((a, b) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+  );
+
+  return layoutsCanonicos.map((layout) => ({
     layout: {
       id: layout.id,
       nome: layout.nome,
@@ -168,6 +183,18 @@ export async function saveLayoutComplementar(
     }
   }
 
+  // Evita concorrência de layouts ativos com o mesmo nome: mantém apenas o layout salvo como canônico.
+  const { error: deactivateDupErr } = await supabase
+    .from("layouts_complementares")
+    .update({ ativo: false })
+    .eq("ativo", true)
+    .eq("nome", nomeNormalizado)
+    .neq("id", layoutId);
+
+  if (deactivateDupErr) {
+    throw new Error(`Erro ao desativar layouts complementares duplicados: ${deactivateDupErr.message}`);
+  }
+
   // --- Sincronização de colunas (mesmo padrão do base) ---
 
   // 1. Buscar IDs atuais no banco
@@ -201,7 +228,8 @@ export async function saveLayoutComplementar(
     const col = colunas[i];
     const payload = {
       layout_complementar_id: layoutId,
-      nome_coluna_excel: col.nome_coluna_excel,
+      // Persistimos a coluna Excel já normalizada por trim para evitar manter mapeamento antigo por espaços acidentais.
+      nome_coluna_excel: col.nome_coluna_excel.trim(),
       apelido: col.apelido,
       tipo_coluna: col.tipo_coluna,
       analise: col.analise,
