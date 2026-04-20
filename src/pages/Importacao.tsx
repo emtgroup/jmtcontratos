@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { Link } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,12 +18,15 @@ import { Label } from "@/components/ui/label";
 import { CheckCircle, Upload, Loader2, AlertCircle, Unlock, Trash2, RefreshCcw } from "lucide-react";
 import {
   importarBase,
+  importarComplementar,
   liberarLockOrfao,
   limparDadosImportados,
   carregarEstadoBaseConsolidada,
+  listarLayoutsComplementaresAtivos,
   type EstadoBaseConsolidada,
   type EscopoLimpezaImportacao,
   type EtapaProgresso,
+  type LayoutComplementarResumo,
 } from "@/services/importacaoBaseService";
 import type { ResumoImportacao } from "@/types/importacao";
 import { useToast } from "@/hooks/use-toast";
@@ -31,7 +35,6 @@ const LABEL_ETAPA: Record<EtapaProgresso, string> = {
   validando: "Validando layout configurado…",
   lendo: "Lendo arquivo Excel…",
   enviando: "Enviando arquivo para processamento…",
-  // Texto explícito evita sensação de travamento: após envio, o trabalho continua no servidor.
   processando_servidor: "Processando registros no servidor…",
   finalizando: "Finalizando importação…",
 };
@@ -50,29 +53,48 @@ const ESTADO_INICIAL_CONSOLIDADO: EstadoBaseConsolidada = {
   total_ambiguos: 0,
 };
 
+type OrigemResumo = "base" | "complementar";
+
 export default function Importacao() {
+  // Resumo unificado da última ação (base ou complementar). Origem decide rótulos extras.
   const [resumo, setResumo] = useState<ResumoImportacao | null>(null);
+  const [origemResumo, setOrigemResumo] = useState<OrigemResumo | null>(null);
   const [estadoConsolidado, setEstadoConsolidado] = useState<EstadoBaseConsolidada>(ESTADO_INICIAL_CONSOLIDADO);
   const [carregandoConsolidado, setCarregandoConsolidado] = useState(false);
   const [erroConsolidado, setErroConsolidado] = useState<string | null>(null);
-  const [layoutSelecionado, setLayoutSelecionado] = useState("");
+
+  // === Base ===
   const [arquivoBase, setArquivoBase] = useState<File | null>(null);
-  const [importando, setImportando] = useState(false);
-  const [etapa, setEtapa] = useState<EtapaProgresso | null>(null);
-  const [totalPreparado, setTotalPreparado] = useState<number | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
+  const [importandoBase, setImportandoBase] = useState(false);
+  const [etapaBase, setEtapaBase] = useState<EtapaProgresso | null>(null);
+  const [totalPreparadoBase, setTotalPreparadoBase] = useState<number | null>(null);
+  const [erroBase, setErroBase] = useState<string | null>(null);
+  const fileInputBase = useRef<HTMLInputElement>(null);
+
+  // === Complementar ===
+  const [layoutsComplementares, setLayoutsComplementares] = useState<LayoutComplementarResumo[]>([]);
+  const [carregandoLayouts, setCarregandoLayouts] = useState(false);
+  const [layoutComplementarId, setLayoutComplementarId] = useState<string>("");
+  const [arquivoComplementar, setArquivoComplementar] = useState<File | null>(null);
+  const [importandoComplementar, setImportandoComplementar] = useState(false);
+  const [etapaComplementar, setEtapaComplementar] = useState<EtapaProgresso | null>(null);
+  const [totalPreparadoComplementar, setTotalPreparadoComplementar] = useState<number | null>(null);
+  const [erroComplementar, setErroComplementar] = useState<string | null>(null);
+  const fileInputComplementar = useRef<HTMLInputElement>(null);
+
+  // === Outros ===
   const [liberandoLock, setLiberandoLock] = useState(false);
   const [dialogLimpezaAberto, setDialogLimpezaAberto] = useState(false);
   const [escopoLimpeza, setEscopoLimpeza] = useState<EscopoLimpezaImportacao>("base_conferencia");
   const [limpando, setLimpando] = useState(false);
-  const fileInputBase = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const importandoQualquer = importandoBase || importandoComplementar;
 
   const carregarConsolidado = async () => {
     setCarregandoConsolidado(true);
     setErroConsolidado(null);
     try {
-      // Este bloco sempre lê o estado atual consolidado no banco e não usa dados da última importação.
       const dados = await carregarEstadoBaseConsolidada();
       setEstadoConsolidado(dados);
     } catch (e) {
@@ -83,42 +105,92 @@ export default function Importacao() {
     }
   };
 
+  const carregarLayoutsComplementares = async () => {
+    setCarregandoLayouts(true);
+    try {
+      const lista = await listarLayoutsComplementaresAtivos();
+      setLayoutsComplementares(lista);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: "Não foi possível carregar layouts complementares", description: msg, variant: "destructive" });
+    } finally {
+      setCarregandoLayouts(false);
+    }
+  };
+
   useEffect(() => {
     void carregarConsolidado();
+    void carregarLayoutsComplementares();
   }, []);
 
   const handleImportBase = async () => {
     if (!arquivoBase) return;
-    setImportando(true);
-    setErro(null);
+    setImportandoBase(true);
+    setErroBase(null);
     setResumo(null);
-    setEtapa(null);
-    setTotalPreparado(null);
+    setOrigemResumo(null);
+    setEtapaBase(null);
+    setTotalPreparadoBase(null);
 
     try {
       const result = await importarBase(
         arquivoBase,
-        (e) => setEtapa(e),
-        (total) => setTotalPreparado(total),
+        (e) => setEtapaBase(e),
+        (total) => setTotalPreparadoBase(total),
       );
       setResumo(result);
+      setOrigemResumo("base");
       const extra = result.primeiro_erro ? ` (1º erro: ${result.primeiro_erro})` : "";
       toast({
-        title: "Importação concluída",
+        title: "Importação base concluída",
         description:
           `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados, ` +
           `${result.vinculados} vinculados, ${result.aguardando} aguardando, ${result.divergentes} divergentes, ${result.ambiguos} ambíguos, ${result.erros} erros${extra}`,
       });
-
-      // Recarrega o consolidado após sucesso para evitar percepção de snapshot da última execução.
       await carregarConsolidado();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setErro(msg);
-      toast({ title: "Erro na importação", description: msg, variant: "destructive" });
+      setErroBase(msg);
+      toast({ title: "Erro na importação base", description: msg, variant: "destructive" });
     } finally {
-      setImportando(false);
-      setEtapa(null);
+      setImportandoBase(false);
+      setEtapaBase(null);
+    }
+  };
+
+  const handleImportComplementar = async () => {
+    if (!arquivoComplementar || !layoutComplementarId) return;
+    setImportandoComplementar(true);
+    setErroComplementar(null);
+    setResumo(null);
+    setOrigemResumo(null);
+    setEtapaComplementar(null);
+    setTotalPreparadoComplementar(null);
+
+    try {
+      const result = await importarComplementar(
+        arquivoComplementar,
+        layoutComplementarId,
+        (e) => setEtapaComplementar(e),
+        (total) => setTotalPreparadoComplementar(total),
+      );
+      setResumo(result);
+      setOrigemResumo("complementar");
+      const semBase = result.ignorados_sem_base ?? 0;
+      toast({
+        title: "Importação complementar concluída",
+        description:
+          `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados ` +
+          `(${semBase} sem base na linha), ${result.vinculados} vinculados, ${result.ambiguos} ambíguos.`,
+      });
+      await carregarConsolidado();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErroComplementar(msg);
+      toast({ title: "Erro na importação complementar", description: msg, variant: "destructive" });
+    } finally {
+      setImportandoComplementar(false);
+      setEtapaComplementar(null);
     }
   };
 
@@ -141,12 +213,15 @@ export default function Importacao() {
   const handleLimparDadosImportados = async () => {
     setLimpando(true);
     try {
-      // Limpeza de dados é sempre explícita e só acontece após confirmação no dialog.
       const resultado = await limparDadosImportados(escopoLimpeza);
       setResumo(null);
-      setErro(null);
+      setOrigemResumo(null);
+      setErroBase(null);
+      setErroComplementar(null);
       setArquivoBase(null);
+      setArquivoComplementar(null);
       if (fileInputBase.current) fileInputBase.current.value = "";
+      if (fileInputComplementar.current) fileInputComplementar.current.value = "";
       setDialogLimpezaAberto(false);
 
       toast({
@@ -168,7 +243,6 @@ export default function Importacao() {
 
   const resumoExecucaoItems = resumo
     ? [
-        // Resultado da importação atual: descreve só esta execução (ação recente), não o consolidado.
         { label: "Total lido", value: resumo.total_linhas },
         { label: "Inseridos", value: resumo.inseridos },
         { label: "Atualizados", value: resumo.atualizados },
@@ -177,13 +251,14 @@ export default function Importacao() {
     : [];
 
   const resumoConsolidadoItems = [
-    // Estado atual consolidado: sempre calculado a partir das tabelas operacionais atuais do banco.
     { label: "Total na Base", value: estadoConsolidado.total_registros_base },
     { label: "Vinculados", value: estadoConsolidado.total_vinculados },
     { label: "Aguardando", value: estadoConsolidado.total_aguardando },
     { label: "Divergentes", value: estadoConsolidado.total_divergentes },
     { label: "Ambíguos", value: estadoConsolidado.total_ambiguos },
   ];
+
+  const semLayoutsComplementares = !carregandoLayouts && layoutsComplementares.length === 0;
 
   return (
     <div>
@@ -195,12 +270,11 @@ export default function Importacao() {
       <div className="flex justify-end mb-4">
         <Dialog open={dialogLimpezaAberto} onOpenChange={setDialogLimpezaAberto}>
           <DialogTrigger asChild>
-            {/* Ação destrutiva fica secundária para não competir com o fluxo principal de importação. */}
             <Button
               variant="outline"
               size="sm"
               className="text-muted-foreground"
-              disabled={importando || liberandoLock || limpando}
+              disabled={importandoQualquer || liberandoLock || limpando}
             >
               <Trash2 className="h-4 w-4 mr-2" />
               Limpar dados importados
@@ -258,7 +332,7 @@ export default function Importacao() {
               <Button
                 variant="destructive"
                 onClick={handleLimparDadosImportados}
-                disabled={limpando || importando || liberandoLock}
+                disabled={limpando || importandoQualquer || liberandoLock}
               >
                 {limpando ? (
                   <>
@@ -307,30 +381,31 @@ export default function Importacao() {
               )}
             </div>
 
-            {/* Progresso por etapa */}
-            {importando && etapa && (
+            {importandoBase && etapaBase && (
               <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
                 <div className="flex items-center gap-2">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{LABEL_ETAPA[etapa]}</span>
+                  <span>{LABEL_ETAPA[etapaBase]}</span>
                 </div>
-                {/* Não exibimos percentual fake; mostramos apenas métricas reais já conhecidas no cliente. */}
-                {totalPreparado !== null && (
+                {totalPreparadoBase !== null && (
                   <p className="text-xs">
-                    {etapa === "enviando"
-                      ? `Enviando ${totalPreparado.toLocaleString("pt-BR")} registros para processamento.`
-                      : etapa === "finalizando"
-                        ? `Finalizando importação de ${totalPreparado.toLocaleString("pt-BR")} registros.`
-                        : `Processando ${totalPreparado.toLocaleString("pt-BR")} registros no servidor.`}
+                    {etapaBase === "enviando"
+                      ? `Enviando ${totalPreparadoBase.toLocaleString("pt-BR")} registros para processamento.`
+                      : etapaBase === "finalizando"
+                        ? `Finalizando importação de ${totalPreparadoBase.toLocaleString("pt-BR")} registros.`
+                        : `Processando ${totalPreparadoBase.toLocaleString("pt-BR")} registros no servidor.`}
                   </p>
                 )}
-                {/* Mensagem curta de espera para reduzir dúvida operacional durante processamento longo. */}
                 <p className="text-xs">O processamento pode levar alguns segundos. Não feche esta tela.</p>
               </div>
             )}
 
-            <Button className="w-full" onClick={handleImportBase} disabled={!arquivoBase || importando || limpando}>
-              {importando ? (
+            <Button
+              className="w-full"
+              onClick={handleImportBase}
+              disabled={!arquivoBase || importandoQualquer || limpando}
+            >
+              {importandoBase ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importação em andamento...
                 </>
@@ -344,7 +419,7 @@ export default function Importacao() {
               size="sm"
               className="w-full text-xs text-muted-foreground"
               onClick={handleLiberarLock}
-              disabled={liberandoLock || importando || limpando}
+              disabled={liberandoLock || importandoQualquer || limpando}
             >
               <Unlock className="h-3.5 w-3.5 mr-1.5" />
               {liberandoLock ? "Verificando lock..." : "Liberar lock travado (>5 min)"}
@@ -352,59 +427,165 @@ export default function Importacao() {
           </CardContent>
         </Card>
 
-        {/* Complementar — desabilitado nesta etapa */}
-        <Card className="opacity-60">
+        {/* Complementar */}
+        <Card>
           <CardHeader>
             <CardTitle className="text-base">Relatório Complementar</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Etapa 2 (em breve): importação complementar será habilitada na próxima entrega.
+              Etapa 2: importação complementar. Só atualiza chaves que já existem na Base — nunca cria/altera registros base.
             </p>
+
             <div>
               <label className="text-xs text-muted-foreground uppercase tracking-wider mb-1.5 block">
                 Layout complementar
               </label>
-              <Select value={layoutSelecionado} onValueChange={setLayoutSelecionado} disabled>
+              <Select
+                value={layoutComplementarId}
+                onValueChange={setLayoutComplementarId}
+                disabled={carregandoLayouts || semLayoutsComplementares || importandoQualquer || limpando}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Disponível na próxima etapa" />
+                  <SelectValue
+                    placeholder={
+                      carregandoLayouts
+                        ? "Carregando layouts..."
+                        : semLayoutsComplementares
+                          ? "Nenhum layout cadastrado"
+                          : "Selecione o layout"
+                    }
+                  />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fs">FS - Controle de Carga</SelectItem>
-                  <SelectItem value="bunge">Bunge - Recebimento</SelectItem>
-                  <SelectItem value="inpasa">Inpasa - Recebimento</SelectItem>
+                  {layoutsComplementares.map((l) => (
+                    <SelectItem key={l.id} value={l.id}>
+                      {l.nome}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              {semLayoutsComplementares && (
+                <p className="text-xs text-muted-foreground mt-1.5">
+                  Cadastre um layout em{" "}
+                  <Link to="/configuracoes" className="underline text-primary">
+                    /configuracoes
+                  </Link>{" "}
+                  antes de importar.
+                </p>
+              )}
             </div>
-            <Button className="w-full" variant="secondary" disabled>
-              Importar Complementar (em breve)
+
+            <input
+              ref={fileInputComplementar}
+              type="file"
+              accept=".xlsx,.xls,.csv"
+              className="hidden"
+              onChange={(e) => setArquivoComplementar(e.target.files?.[0] || null)}
+            />
+            <div
+              className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                semLayoutsComplementares
+                  ? "opacity-50 cursor-not-allowed"
+                  : "cursor-pointer hover:border-primary/50"
+              }`}
+              onClick={() => {
+                if (!semLayoutsComplementares) fileInputComplementar.current?.click();
+              }}
+            >
+              <Upload className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+              {arquivoComplementar ? (
+                <p className="text-sm font-medium">{arquivoComplementar.name}</p>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">Selecionar arquivo</p>
+                  <p className="text-xs text-muted-foreground mt-1">Formato: .xlsx, .xls, .csv</p>
+                </>
+              )}
+            </div>
+
+            {importandoComplementar && etapaComplementar && (
+              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{LABEL_ETAPA[etapaComplementar]}</span>
+                </div>
+                {totalPreparadoComplementar !== null && (
+                  <p className="text-xs">
+                    {etapaComplementar === "enviando"
+                      ? `Enviando ${totalPreparadoComplementar.toLocaleString("pt-BR")} registros para processamento.`
+                      : etapaComplementar === "finalizando"
+                        ? `Finalizando importação de ${totalPreparadoComplementar.toLocaleString("pt-BR")} registros.`
+                        : `Processando ${totalPreparadoComplementar.toLocaleString("pt-BR")} registros no servidor.`}
+                  </p>
+                )}
+                <p className="text-xs">O processamento pode levar alguns segundos. Não feche esta tela.</p>
+              </div>
+            )}
+
+            <Button
+              className="w-full"
+              onClick={handleImportComplementar}
+              disabled={
+                !arquivoComplementar ||
+                !layoutComplementarId ||
+                importandoQualquer ||
+                limpando ||
+                semLayoutsComplementares
+              }
+            >
+              {importandoComplementar ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importação em andamento...
+                </>
+              ) : (
+                "Importar Complementar"
+              )}
             </Button>
           </CardContent>
         </Card>
       </div>
 
-      {/* Erro bruto */}
-      {erro && (
+      {/* Erros */}
+      {erroBase && (
         <Card className="border-l-4 border-l-[hsl(var(--status-divergente))] mb-6">
           <CardContent className="pt-6">
             <div className="flex items-start gap-2 text-[hsl(var(--status-divergente))]">
               <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="text-sm font-medium">Falha na importação</p>
-                <p className="text-xs font-mono whitespace-pre-wrap break-words">{erro}</p>
+                <p className="text-sm font-medium">Falha na importação base</p>
+                <p className="text-xs font-mono whitespace-pre-wrap break-words">{erroBase}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {erroComplementar && (
+        <Card className="border-l-4 border-l-[hsl(var(--status-divergente))] mb-6">
+          <CardContent className="pt-6">
+            <div className="flex items-start gap-2 text-[hsl(var(--status-divergente))]">
+              <AlertCircle className="h-5 w-5 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Falha na importação complementar</p>
+                <p className="text-xs font-mono whitespace-pre-wrap break-words">{erroComplementar}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Resultado da importação atual */}
+      {/* Resultado da importação atual (base ou complementar) */}
       {resumo && (
         <Card className="border-l-4 border-l-[hsl(var(--status-vinculado))] mb-6">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-[hsl(var(--status-vinculado))]" />
               Resultado da Importação Atual
+              {origemResumo && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  ({origemResumo === "base" ? "Base" : "Complementar"})
+                </span>
+              )}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -441,6 +622,13 @@ export default function Importacao() {
                 <p className="font-semibold">{resumo.erros}</p>
               </div>
             </div>
+            {origemResumo === "complementar" && resumo.ignorados_sem_base !== undefined && (
+              <div className="mt-4 text-xs text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                <span className="font-semibold">Ignorados sem base na linha:</span>{" "}
+                {resumo.ignorados_sem_base.toLocaleString("pt-BR")} (chaves do arquivo que não existem em
+                registros_base — não são importadas).
+              </div>
+            )}
             {resumo.primeiro_erro && (
               <div className="mt-4 text-xs text-muted-foreground font-mono bg-muted/40 rounded-md px-3 py-2 break-words">
                 <span className="font-semibold">1º erro:</span> {resumo.primeiro_erro}
@@ -463,7 +651,7 @@ export default function Importacao() {
             variant="outline"
             size="sm"
             onClick={carregarConsolidado}
-            disabled={carregandoConsolidado || importando || limpando}
+            disabled={carregandoConsolidado || importandoQualquer || limpando}
           >
             {carregandoConsolidado ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCcw className="h-4 w-4 mr-2" />}
             Atualizar
