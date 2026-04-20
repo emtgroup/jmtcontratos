@@ -27,9 +27,10 @@ type LinhaConferencia = {
   origem: string | null;
 };
 
-function normalizarStatus(status: string | null | undefined): StatusType {
-  if (status === "vinculado" || status === "divergente" || status === "ambiguo") return status;
-  return "aguardando";
+function validarStatus(status: string, chave: string): StatusType {
+  // Status da conferência é materializado no backend; UI não pode inferir nem corrigir semanticamente.
+  if (status === "vinculado" || status === "aguardando" || status === "divergente" || status === "ambiguo") return status;
+  throw new Error(`Status inválido na conferência para a chave ${chave}: "${status}"`);
 }
 
 export default function Conferencia() {
@@ -44,50 +45,31 @@ export default function Conferencia() {
     setErro(null);
 
     try {
-      // A conferência deve refletir o estado consolidado do sistema; por isso consultamos base + conferência sem usar mock.
-      const { data: baseRows, error: baseError } = await supabase
-        .from("registros_base")
-        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal")
+      // A tela consome um único dataset vindo da conferência materializada (via view backend), conforme PRD.
+      // Não existe join no frontend para evitar decisão semântica fora da camada de processamento.
+      const { data, error } = await supabase
+        .from("vw_conferencia_tela" as never)
+        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, status, origem")
         .order("updated_at", { ascending: false })
         .limit(2000);
 
-      if (baseError) throw new Error(`Erro ao carregar base: ${baseError.message}`);
+      if (error) throw new Error(`Erro ao carregar conferência: ${error.message}`);
 
-      const chaves = (baseRows ?? []).map((row) => row.chave_normalizada);
-      const statusMap = new Map<string, { status: StatusType; origem: string | null }>();
-
-      if (chaves.length > 0) {
-        const { data: confRows, error: confError } = await supabase
-          .from("conferencia")
-          .select("chave_normalizada, status, origem")
-          .in("chave_normalizada", chaves);
-
-        if (confError) throw new Error(`Erro ao carregar conferência: ${confError.message}`);
-
-        for (const row of confRows ?? []) {
-          statusMap.set(row.chave_normalizada, {
-            status: normalizarStatus(row.status),
-            origem: row.origem,
-          });
-        }
-      }
-
-      const linhas: LinhaConferencia[] = (baseRows ?? []).map((row) => {
-        const statusInfo = statusMap.get(row.chave_normalizada);
-        return {
-          id: row.id,
-          chave: row.chave_normalizada,
-          contrato: row.contrato_vinculado,
-          nota: row.nota_fiscal,
-          status: statusInfo?.status ?? "aguardando",
-          origem: statusInfo?.origem ?? null,
-        };
-      });
+      const linhas: LinhaConferencia[] = (data ?? []).map((row: any) => ({
+        id: row.id,
+        chave: row.chave_normalizada,
+        contrato: row.contrato_vinculado,
+        nota: row.nota_fiscal,
+        status: validarStatus(row.status, row.chave_normalizada),
+        origem: row.origem,
+      }));
 
       setRecords(linhas);
     } catch (e) {
+      console.error("Falha técnica na leitura da conferência", e);
       const msg = e instanceof Error ? e.message : String(e);
       setErro(msg);
+      setRecords([]);
     } finally {
       setLoading(false);
     }
@@ -108,6 +90,8 @@ export default function Conferencia() {
   return (
     <div>
       <PageHeader title="Módulo de Conferência" subtitle="Visualização do resultado consolidado entre Base GRL053 e conferência materializada">
+        {/* Botão Atualizar apenas refaz leitura do estado consolidado.
+            Não executa reprocessamento conforme PRD. */}
         <Button variant="outline" size="sm" onClick={carregarConferencia} disabled={loading}>
           {loading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <RefreshCcw className="h-4 w-4 mr-1" />}
           Atualizar
@@ -117,7 +101,7 @@ export default function Conferencia() {
 
       <Card className="mb-4 border-dashed">
         <CardContent className="py-3 text-xs text-muted-foreground">
-          Tela conectada ao estado consolidado do banco. O status é lido da tabela `conferencia` e exibido por chave da base.
+          Tela conectada ao estado consolidado do banco. O status é lido da tabela `conferencia` e exibido sem inferência no frontend.
         </CardContent>
       </Card>
 
