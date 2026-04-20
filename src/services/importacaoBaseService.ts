@@ -216,3 +216,35 @@ export async function liberarLockOrfao(): Promise<boolean> {
   if (error) throw new Error(error.message);
   return true;
 }
+
+
+export type EscopoLimpezaImportacao = "base_conferencia" | "complementares_conferencia" | "tudo";
+
+interface ResumoLimpezaImportacao {
+  escopo: EscopoLimpezaImportacao;
+  registros_base_removidos: number;
+  registros_complementares_removidos: number;
+  conferencia_removida: number;
+  importacoes_removidas: number;
+}
+
+export async function limparDadosImportados(escopo: EscopoLimpezaImportacao): Promise<ResumoLimpezaImportacao> {
+  const { data, error } = await supabase.functions.invoke("limpar-dados-importados", {
+    body: { escopo },
+  });
+
+  if (error) {
+    let detalhe = error.message || "Erro desconhecido na função de limpeza";
+    try {
+      const ctx = (error as unknown as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+      if (ctx?.json) {
+        const body = await ctx.json();
+        if (body?.error) detalhe = body.error;
+      }
+    } catch { /* ignore */ }
+    throw new Error(detalhe);
+  }
+
+  if (data?.error) throw new Error(data.error);
+  return data as ResumoLimpezaImportacao;
+}
