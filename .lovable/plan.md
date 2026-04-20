@@ -1,80 +1,123 @@
 
-# Plano: Corrigir desalinhamento entre Configurações e Importação Base
 
-## Diagnóstico (causa raiz)
+# Plano revisado: Importação Complementar com matching multi-layout correto
 
-O erro `Layout base inválido: tipo "contrato_vinculado" ausente` é real. Ele acontece porque há **dois desalinhamentos** entre o que `Configuracoes.tsx` salva e o que `importacaoBaseService.ts` espera:
+## Ajustes de aderência ao PRD (vs. plano anterior)
 
-### Bug 1 — `tipo_coluna`: caixa e formato diferentes
+**Erro 1 — `origem` estava recebendo ID em vez de nome do layout.**
+Corrigir: `origem` recebe `layouts_complementares.nome` (texto), nunca UUID.
 
-- **Tela salva**: `"Contrato vinculado"`, `"Nota fiscal"`, `"Placa"` (texto legível, com espaço e maiúscula — ver `tipoColunaOptions` linha 35–49 de Configuracoes.tsx).
-- **Service compara com**: `"contrato_vinculado"`, `"nota_fiscal"`, `"placa"` (snake_case, linha 6–7 de `importacaoBaseService.ts`).
-- **Resultado**: `contagem.get("contrato_vinculado")` retorna `0` → erro "ausente".
+**Erro 2 — matching só olhava o layout recém-importado, podendo deixar `vinculado` escondendo ambiguidade real.**
+Correto: para cada `chave_normalizada` afetada, contar **todos** os layouts complementares que possuem aquela chave e decidir status com base no total.
 
-Confirmado no banco:
+## Regra oficial de conferência (passa a valer no fluxo complementar)
+
+Para cada `chave_normalizada` afetada por uma importação:
+
+```text
+n = COUNT DISTINCT(layout_complementar_id)
+    em registros_complementares
+    WHERE chave_normalizada = X
+
+n = 0  → conferencia.status = 'aguardando', origem = NULL
+n = 1  → conferencia.status = 'vinculado',  origem = nome do layout
+n > 1  → conferencia.status = 'ambiguo',    origem = NULL
 ```
-tipo_coluna = "Contrato vinculado"  ← gravado pela tela
-tipo_coluna = "Nota fiscal"
-tipo_coluna = "Placa"
-```
 
-### Bug 2 — `nome_coluna_excel`: nome de cabeçalho em vez de letra
+Aplicado **incrementalmente**: só recalcula chaves tocadas pela importação atual. Sem reset global. Sem mexer em `registros_base`.
 
-- **Tela salva**: `"CONTR. CLIENTE"`, `"NOTA"`, `"PLACA"` (texto do cabeçalho da planilha).
-- **Service espera**: `"A"`, `"B"`, `"D"` (letra Excel) e chama `letraParaIndice()` que **lança erro** se não for `[A-Z]+`.
-- Mesmo se o Bug 1 fosse corrigido, o próximo erro seria: `Coluna "CONTR. CLIENTE" não é uma letra Excel válida`.
+## Diagnóstico do estado atual (inalterado)
 
-### Por que isso aconteceu
+- Backend pronto: `registros_complementares` com UNIQUE `(layout_complementar_id, chave_normalizada)`, índice em `chave_normalizada`, `conferencia` com UNIQUE em `chave_normalizada`, `import_lock` global.
+- Build quebrado: `ProgressoImportacaoBase` referenciado mas não declarado em `src/types/importacao.ts`.
+- UI complementar mockada em `Importacao.tsx`.
+- Edge `importar-complementar` não existe.
 
-A entrega anterior assumiu que o usuário digitaria letras Excel (`A`, `B`, `C`). Mas a tela de Configurações sempre tratou esse campo como **nome da coluna do cabeçalho** (label exibido "Nome da Coluna no Excel", placeholder tipo "EMPRESA"). O usuário usou exatamente como a interface sugeria.
+## Implementação
 
-A interpretação correta, alinhada com o PRD ("workspace trabalha com campos lógicos mapeados a partir do cabeçalho"), é: o `nome_coluna_excel` é o **texto do cabeçalho** que deve ser localizado na linha de cabeçalho da planilha.
+### 1. Corrigir build (mínimo)
+`src/types/importacao.ts`: declarar e exportar `ProgressoImportacaoBase` (movido do service). Service passa a importar do types. Sem outras mudanças no service.
 
-## Correção mínima e segura
+### 2. Edge function `supabase/functions/importar-complementar/index.ts`
 
-Ajustar **apenas** `src/services/importacaoBaseService.ts`. Nenhuma migration, nenhuma alteração em Configurações, nenhum reset de dados.
+Espelha estrutura de `importar-base`. Diferenças:
 
-### Mudança 1 — Normalizar `tipo_coluna` na comparação
+- **Body**: `{ layout_complementar_id, nome_arquivo, linhas }` validado.
+- **Carregar layout** ativo + `nome` (será usado como `origem`). Erro se inativo/inexistente.
+- **Lock**: mesma `import_lock` (1 por vez global).
+- **Importação registrada** com `tipo='complementar'`, `layout_id=layout_complementar_id`.
+- **Normalização** idêntica (contrato, nota → chave `contrato::nota`; placa).
+- **Filtro base obrigatório**: BATCH SELECT em `registros_base` por `chave_normalizada` (chunks de 150). Linhas cuja chave **não existe na base** → `ignorados_sem_base++`. Nunca cria base.
+- **Classificar contra `registros_complementares`** filtrado por `layout_complementar_id`:
+  - inexistente → INSERT
+  - existente, dados normalizados iguais → ignorar
+  - existente, mudou → UPDATE
+- **BATCH INSERT/UPDATE** (chunks de 500).
+- **Recálculo de conferência (multi-layout)** — apenas para `chavesAfetadas` (todas as chaves do arquivo que existem na base, independente de ter sido inserido/atualizado/ignorado, porque o estado pode ter mudado em outras importações):
+  1. SELECT `chave_normalizada, layout_complementar_id` em `registros_complementares` WHERE `chave_normalizada IN (chavesAfetadas)` (chunks de 150).
+  2. Em memória: `Map<chave, Set<layout_id>>`.
+  3. Para cada chave:
+     - `Set.size === 0` → `{ status: 'aguardando', origem: null }`
+     - `Set.size === 1` → buscar nome do único layout (1 SELECT em `layouts_complementares` filtrando por todos os IDs únicos encontrados na rodada → Map id→nome) → `{ status: 'vinculado', origem: nome }`
+     - `Set.size > 1` → `{ status: 'ambiguo', origem: null }`
+  4. **BATCH UPSERT** em `conferencia` (chunks de 500) com `onConflict: 'chave_normalizada'`.
+- **Resumo retornado**:
+  - `total_linhas, inseridos, atualizados, ignorados, ignorados_sem_base`
+  - `vinculados, aguardando, ambiguos` = contagem do estado **das chaves afetadas** após recálculo (não estado global do banco)
+  - `divergentes = 0` (fora desta entrega — diagnóstico secundário Nota+Placa permanece próximo passo)
+  - `erros, primeiro_erro`
+- **Liberar lock** em qualquer caminho (try/finally).
 
-Criar um helper `normalizaTipo(s)` que faz `s.trim().toLowerCase().replace(/\s+/g, "_")`.
-- `"Contrato vinculado"` → `"contrato_vinculado"` ✓
-- `"Nota fiscal"` → `"nota_fiscal"` ✓
-- `"Placa"` → `"placa"` ✓
-- `"contrato_vinculado"` (compatibilidade reversa) → `"contrato_vinculado"` ✓
+### 3. Service `src/services/importacaoBaseService.ts`
 
-Aplicar na hora de montar `contagem` e `indicePorTipo`. A constante `TIPOS_OBRIGATORIOS` já está em snake_case, mantém.
+Adicionar:
+- `listarLayoutsComplementaresAtivos()` → `[{ id, nome }]` para o dropdown.
+- `carregarLayoutComplementarAtivo(layoutId)` → layout + colunas, validando obrigatórios (`contrato_vinculado`, `nota_fiscal` via `normalizaTipo` já existente; `placa` opcional).
+- `importarComplementar(file, layoutId, onEtapa, onTotalPreparado)` → reusa `parseExcelFile()` (mesma shape `LayoutResolvido`), invoca edge `importar-complementar`, mesmo tratamento de erro do `importarBase`.
 
-### Mudança 2 — Resolver coluna por nome de cabeçalho (não por letra)
+Sem alterar nada do fluxo base.
 
-Substituir `letraParaIndice(nome_coluna_excel)` por uma busca posicional:
+### 4. UI `src/pages/Importacao.tsx`
 
-1. Ler `headerRow` da planilha (linha `linha_cabecalho`).
-2. Para cada coluna configurada, normalizar `nome_coluna_excel` (trim + uppercase + colapsar espaços) e procurar índice correspondente em `headerRow` normalizado igual.
-3. Se não achar → erro claro: `Coluna "CONTR. CLIENTE" (contrato_vinculado) não encontrada no cabeçalho da linha X. Cabeçalhos disponíveis: [...]`.
-4. **Compatibilidade reversa**: se `nome_coluna_excel` casar com `^[A-Z]+$` E não for encontrado como cabeçalho, tentar interpretar como letra Excel (preserva configurações antigas que usaram letras).
+- Carregar `listarLayoutsComplementaresAtivos()` no mount.
+- Reativar card "Relatório Complementar":
+  - Dropdown populado com layouts reais (estado vazio → mensagem com link para `/configuracoes`).
+  - Upload de arquivo.
+  - Botão "Importar Complementar" desabilitado até ter layout + arquivo.
+  - Validação local antes de enviar (mesma do base).
+- Estado paralelo: `layoutComplementarId, arquivoComplementar, importandoComplementar, etapaComplementar, resumoComplementar, erroComplementar`.
+- Reusa o painel "Resultado da Importação Atual" exibindo o último resumo (base ou complementar) com seus campos próprios; complementar adiciona `Ignorados sem base na linha`.
+- Ao final: `carregarConsolidado()` para refletir vinculados/ambíguos atualizados.
+- Erros propagados sem mascarar.
 
-Isso exige reordenar o fluxo: ler o arquivo **primeiro**, depois resolver índices contra o header real (hoje resolve antes de abrir o arquivo). Mudança pequena.
+### 5. Sem mudanças
+- Schema, RLS, `registros_base`, `Configuracoes.tsx`, edge `importar-base`, edge `limpar-dados-importados`, conferência (página).
 
-### Mudança 3 — Mensagens de erro mais úteis
+## Aderência aos PRDs
 
-- "tipo X ausente" → listar tipos encontrados no layout para o usuário ver o que tem configurado.
-- Manter erros brutos (sem mascarar).
+- **Chave `contrato + nota`** + normalização: idêntica.
+- **Complementar não cria/altera/remove base**: apenas SELECT em `registros_base`; chaves órfãs viram `ignorados_sem_base`.
+- **`origem` = nome do layout**: tirado de `layouts_complementares.nome`, nunca UUID.
+- **Status `vinculado / aguardando / ambiguo`**: calculado por contagem distinta de layouts por chave, considerando estado completo do banco (multi-layout).
+- **Incremental**: só recalcula chaves do arquivo atual.
+- **Indexado**: SELECTs por `chave_normalizada` (índice existente), sem N×N.
+- **Lock global**: 1 importação por vez.
 
-## Fora de escopo
+## Arquivos alterados
 
-- Não alterar `Configuracoes.tsx` (a UX atual está correta e alinhada com PRD).
-- Não alterar banco / migrations.
-- Não tocar em complementares, matching, conferência, edge function de batching.
-- Não alterar regras de negócio (chave continua `contrato_vinculado + nota_fiscal`).
-
-## Arquivo alterado
-
-| Arquivo | Mudança |
+| Arquivo | Ação |
 |---|---|
-| `src/services/importacaoBaseService.ts` | Normalização de `tipo_coluna` + resolução por header (com fallback para letra Excel) |
+| `src/types/importacao.ts` | + `ProgressoImportacaoBase`; campos opcionais no `ResumoImportacao` (`ignorados_sem_base`) |
+| `src/services/importacaoBaseService.ts` | Importa tipo do types; + `importarComplementar`, + `listarLayoutsComplementaresAtivos`, + `carregarLayoutComplementarAtivo` |
+| `src/pages/Importacao.tsx` | Reativa card complementar com fluxo real |
+| `supabase/functions/importar-complementar/index.ts` | **Novo** — importação + recálculo multi-layout de conferência |
 
 ## Resultado esperado
 
-- Importação do `GRL053 COOPERAGRO.xlsx` passa a funcionar com o layout atual configurado em /configuracoes (sem o usuário precisar reconfigurar nada).
-- Erro fica explícito e útil quando cabeçalho não bate.
-- Configurações antigas com letras Excel continuam funcionando (compat reversa).
+- Build volta a passar.
+- Importar complementar respeita base como verdade (não cria/altera).
+- `conferencia.origem` mostra nome legível do layout (ex: "Bunge", "Inpasa") quando `vinculado`.
+- Chave com 2+ layouts batendo vira `ambiguo` automaticamente, mesmo que tenha sido `vinculado` antes.
+- Chave que perdeu o último complementar volta a `aguardando` (recálculo cobre esse caso quando a chave aparece numa nova importação).
+- Resumo mostra: total, inseridos, atualizados, ignorados, ignorados_sem_base, vinculados, aguardando, ambiguos.
+
