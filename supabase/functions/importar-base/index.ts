@@ -17,6 +17,17 @@ interface RequestBody {
   linhas: LinhaParseada[];
 }
 
+type EtapaImportacaoBackend =
+  | "iniciando"
+  | "validando_lock"
+  | "normalizando_dados"
+  | "classificando_registros"
+  | "persistindo_registros"
+  | "atualizando_conferencia"
+  | "consolidando_resultado"
+  | "finalizando_importacao"
+  | "erro";
+
 // === Normalização (regras oficiais do PRD) ===
 function normalizarContrato(raw: string): string {
   const cleaned = raw.replace(/[^\d\-]/g, "");
@@ -55,6 +66,33 @@ Deno.serve(async (req) => {
 
   let importacaoId: string | null = null;
   let lockAdquirido = false;
+  let ultimoUpdateProgresso = 0;
+
+  // Persiste telemetria real no registro de importação em marcos de etapa/lote.
+  // Não atualizamos por linha para evitar overhead desnecessário no banco.
+  const atualizarProgresso = async (payload: {
+    etapa_atual?: EtapaImportacaoBackend;
+    status_processamento?: "processando" | "finalizado" | "erro";
+    linhas_processadas?: number;
+    inseridos?: number;
+    atualizados?: number;
+    ignorados?: number;
+    erros?: number;
+    force?: boolean;
+  }) => {
+    if (!importacaoId) return;
+    const agora = Date.now();
+    const force = payload.force ?? false;
+    if (!force && agora - ultimoUpdateProgresso < 400) return;
+    ultimoUpdateProgresso = agora;
+
+    const { force: _, ...updatePayload } = payload;
+    await supabase
+      .from("importacoes")
+      .update(updatePayload)
+      .eq("id", importacaoId)
+      .then(() => {}, () => {});
+  };
 
   try {
     const body: RequestBody = await req.json();
@@ -67,6 +105,7 @@ Deno.serve(async (req) => {
     }
 
     // === LOCK: verifica + libera órfão (>5min) + adquire ===
+    await atualizarProgresso({ etapa_atual: "validando_lock", status_processamento: "processando", force: true });
     const { data: lockData, error: lockError } = await supabase
       .from("import_lock").select("*").eq("id", 1).single();
     if (lockError) throw new Error(`Erro ao verificar lock: ${lockError.message}`);
@@ -92,7 +131,19 @@ Deno.serve(async (req) => {
     // Cria registro de importação
     const { data: importacao, error: impError } = await supabase
       .from("importacoes")
-      .insert({ tipo: "base", nome_arquivo: body.nome_arquivo, total_linhas: body.linhas.length, status: "em_andamento" })
+      .insert({
+        tipo: "base",
+        nome_arquivo: body.nome_arquivo,
+        total_linhas: body.linhas.length,
+        status: "em_andamento",
+        status_processamento: "processando",
+        etapa_atual: "iniciando",
+        linhas_processadas: 0,
+        inseridos: 0,
+        atualizados: 0,
+        ignorados: 0,
+        erros: 0,
+      })
       .select("id").single();
     if (impError) throw new Error(`Erro ao criar importação: ${impError.message}`);
     importacaoId = importacao.id;
@@ -104,6 +155,8 @@ Deno.serve(async (req) => {
       .eq("id", 1);
     if (lockAcquireError) throw new Error(`Erro ao adquirir lock: ${lockAcquireError.message}`);
     lockAdquirido = true;
+    // O importacao_id nasce aqui e passa a ser a referência única para polling no frontend.
+    await atualizarProgresso({ etapa_atual: "normalizando_dados", status_processamento: "processando", force: true });
 
     // === Normalização em memória ===
     type LinhaProcessada = {
@@ -117,6 +170,7 @@ Deno.serve(async (req) => {
     const chavesVistas = new Set<string>();
     let erros = 0;
     let primeiroErro: string | null = null;
+    const PROGRESSO_PASSO_LINHAS = 500;
 
     for (let i = 0; i < body.linhas.length; i++) {
       const linha = body.linhas[i];
@@ -137,7 +191,16 @@ Deno.serve(async (req) => {
         placa: normalizarPlaca(linha.placa),
         dados: linha.dados_originais || {},
       });
+
+      if ((i + 1) % PROGRESSO_PASSO_LINHAS === 0 || i === body.linhas.length - 1) {
+        await atualizarProgresso({
+          etapa_atual: "normalizando_dados",
+          linhas_processadas: i + 1,
+          erros,
+        });
+      }
     }
+    await atualizarProgresso({ etapa_atual: "classificando_registros", linhas_processadas: body.linhas.length, erros, force: true });
 
     // === BATCH SELECT: busca registros existentes pelas chaves ===
     const todasChaves = processadas.map(p => p.chave);
@@ -193,6 +256,13 @@ Deno.serve(async (req) => {
         }
       }
     }
+    await atualizarProgresso({
+      etapa_atual: "persistindo_registros",
+      linhas_processadas: body.linhas.length,
+      ignorados,
+      erros,
+      force: true,
+    });
 
     // === BATCH INSERT registros_base ===
     let inseridos = 0;
@@ -200,6 +270,7 @@ Deno.serve(async (req) => {
       const { error: insErr } = await supabase.from("registros_base").insert(lote);
       if (insErr) throw new Error(`Erro no insert em lote (${lote.length} linhas): ${insErr.message}`);
       inseridos += lote.length;
+      await atualizarProgresso({ etapa_atual: "persistindo_registros", inseridos, atualizados: 0, ignorados, erros });
     }
 
     // === UPDATEs (não há bulk update no PostgREST; faz por id em paralelo controlado) ===
@@ -219,6 +290,7 @@ Deno.serve(async (req) => {
           atualizados++;
         }
       }
+      await atualizarProgresso({ etapa_atual: "persistindo_registros", inseridos, atualizados, ignorados, erros });
     }
 
     // Reprocessa somente as chaves afetadas (insert/update), conforme PRD de reprocessamento incremental.
@@ -231,6 +303,7 @@ Deno.serve(async (req) => {
     ];
 
     if (chavesAfetadas.length > 0) {
+      await atualizarProgresso({ etapa_atual: "atualizando_conferencia", inseridos, atualizados, ignorados, erros, force: true });
       const confRows = chavesAfetadas.map((chave) => ({
         chave_normalizada: chave,
         status: "aguardando",
@@ -264,11 +337,21 @@ Deno.serve(async (req) => {
         else aguardando++;
       }
     }
+    await atualizarProgresso({ etapa_atual: "consolidando_resultado", inseridos, atualizados, ignorados, erros, force: true });
 
     // === Finaliza importação ===
     await supabase
       .from("importacoes")
-      .update({ inseridos, atualizados, ignorados, status: "concluida" })
+      .update({
+        inseridos,
+        atualizados,
+        ignorados,
+        erros,
+        linhas_processadas: body.linhas.length,
+        etapa_atual: "finalizando_importacao",
+        status_processamento: "finalizado",
+        status: "concluida",
+      })
       .eq("id", importacaoId);
 
     // === Libera lock ===
@@ -296,7 +379,11 @@ Deno.serve(async (req) => {
     // Tenta marcar importação como falhou
     if (importacaoId) {
       await supabase.from("importacoes")
-        .update({ status: "falhou" })
+        .update({
+          status: "falhou",
+          status_processamento: "erro",
+          etapa_atual: "erro",
+        })
         .eq("id", importacaoId)
         .then(() => {}, () => {});
     }

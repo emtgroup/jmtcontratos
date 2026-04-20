@@ -167,6 +167,19 @@ export type EtapaProgresso = "validando" | "lendo" | "enviando" | "processando_s
 export type OnEtapa = (etapa: EtapaProgresso) => void;
 export type OnTotalPreparado = (total: number) => void;
 
+export interface ProgressoImportacaoBase {
+  importacao_id: string;
+  status_processamento: "processando" | "finalizado" | "erro";
+  etapa_atual: string;
+  total_linhas: number;
+  linhas_processadas: number;
+  inseridos: number;
+  atualizados: number;
+  ignorados: number;
+  erros: number;
+  updated_at: string;
+}
+
 export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPreparado?: OnTotalPreparado): Promise<ResumoImportacao> {
   onEtapa?.("validando");
   const layout = await carregarLayoutAtivo();
@@ -200,6 +213,40 @@ export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPrepara
   if (data?.error) throw new Error(data.error);
 
   return data as ResumoImportacao;
+}
+
+export async function buscarProgressoImportacaoBaseAtiva(): Promise<ProgressoImportacaoBase | null> {
+  // Polling leve: descobrimos o importacao_id ativo via lock e depois lemos a telemetria real na tabela importacoes.
+  const { data: lock, error: lockError } = await supabase
+    .from("import_lock")
+    .select("locked, importacao_id")
+    .eq("id", 1)
+    .single();
+
+  if (lockError) throw new Error(`Erro ao consultar lock de importação: ${lockError.message}`);
+  if (!lock?.locked || !lock.importacao_id) return null;
+
+  const { data: progresso, error: progressoError } = await supabase
+    .from("importacoes")
+    .select("id, status_processamento, etapa_atual, total_linhas, linhas_processadas, inseridos, atualizados, ignorados, erros, updated_at, tipo")
+    .eq("id", lock.importacao_id)
+    .maybeSingle();
+
+  if (progressoError) throw new Error(`Erro ao consultar progresso da importação: ${progressoError.message}`);
+  if (!progresso || progresso.tipo !== "base") return null;
+
+  return {
+    importacao_id: progresso.id,
+    status_processamento: progresso.status_processamento as ProgressoImportacaoBase["status_processamento"],
+    etapa_atual: progresso.etapa_atual,
+    total_linhas: progresso.total_linhas,
+    linhas_processadas: progresso.linhas_processadas,
+    inseridos: progresso.inseridos,
+    atualizados: progresso.atualizados,
+    ignorados: progresso.ignorados,
+    erros: progresso.erros,
+    updated_at: progresso.updated_at,
+  };
 }
 
 // Fallback manual para destravar lock órfão (>5 min)
