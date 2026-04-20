@@ -228,23 +228,69 @@ interface ResumoLimpezaImportacao {
   importacoes_removidas: number;
 }
 
-export async function limparDadosImportados(escopo: EscopoLimpezaImportacao): Promise<ResumoLimpezaImportacao> {
-  const { data, error } = await supabase.functions.invoke("limpar-dados-importados", {
-    body: { escopo },
-  });
+async function limparDadosImportadosViaBanco(escopo: EscopoLimpezaImportacao): Promise<ResumoLimpezaImportacao> {
+  const { data: lock, error: lockError } = await supabase
+    .from("import_lock")
+    .select("locked")
+    .eq("id", 1)
+    .single();
 
-  if (error) {
-    let detalhe = error.message || "Erro desconhecido na função de limpeza";
-    try {
-      const ctx = (error as unknown as { context?: { json?: () => Promise<{ error?: string }> } }).context;
-      if (ctx?.json) {
-        const body = await ctx.json();
-        if (body?.error) detalhe = body.error;
-      }
-    } catch { /* ignore */ }
-    throw new Error(detalhe);
+  if (lockError) throw new Error(`Erro ao verificar lock: ${lockError.message}`);
+  if (lock?.locked) throw new Error("Existe uma importação em andamento. Aguarde a conclusão para executar a limpeza.");
+
+  const resumo: ResumoLimpezaImportacao = {
+    escopo,
+    registros_base_removidos: 0,
+    registros_complementares_removidos: 0,
+    conferencia_removida: 0,
+    importacoes_removidas: 0,
+  };
+
+  if (escopo === "base_conferencia" || escopo === "tudo") {
+    const { count, error } = await supabase.from("registros_base").delete({ count: "exact" }).not("id", "is", null);
+    if (error) throw new Error(`Erro ao limpar registros base: ${error.message}`);
+    resumo.registros_base_removidos = count ?? 0;
   }
 
-  if (data?.error) throw new Error(data.error);
-  return data as ResumoLimpezaImportacao;
+  if (escopo === "complementares_conferencia" || escopo === "tudo") {
+    const { count, error } = await supabase.from("registros_complementares").delete({ count: "exact" }).not("id", "is", null);
+    if (error) throw new Error(`Erro ao limpar registros complementares: ${error.message}`);
+    resumo.registros_complementares_removidos = count ?? 0;
+  }
+
+  // Mesmo sem registros na conferência, limpamos para garantir estado consistente após limpeza explícita.
+  const { count: conferenciaCount, error: conferenciaError } = await supabase
+    .from("conferencia")
+    .delete({ count: "exact" })
+    .not("id", "is", null);
+  if (conferenciaError) throw new Error(`Erro ao limpar conferência: ${conferenciaError.message}`);
+  resumo.conferencia_removida = conferenciaCount ?? 0;
+
+  return resumo;
+}
+
+export async function limparDadosImportados(escopo: EscopoLimpezaImportacao): Promise<ResumoLimpezaImportacao> {
+  try {
+    const { data, error } = await supabase.functions.invoke("limpar-dados-importados", {
+      body: { escopo },
+    });
+
+    if (error) {
+      let detalhe = error.message || "Erro desconhecido na função de limpeza";
+      try {
+        const ctx = (error as unknown as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+        if (ctx?.json) {
+          const body = await ctx.json();
+          if (body?.error) detalhe = body.error;
+        }
+      } catch { /* ignore */ }
+      throw new Error(detalhe);
+    }
+
+    if (data?.error) throw new Error(data.error);
+    return data as ResumoLimpezaImportacao;
+  } catch {
+    // Fallback seguro: mantém limpeza explícita mesmo quando a Edge Function ainda não está disponível no ambiente.
+    return limparDadosImportadosViaBanco(escopo);
+  }
 }
