@@ -60,38 +60,53 @@ export type Database = {
         Row: {
           atualizados: number
           created_at: string
+          erros: number
+          etapa_atual: string
           id: string
           ignorados: number
           inseridos: number
           layout_id: string | null
+          linhas_processadas: number
           nome_arquivo: string
           status: string
+          status_processamento: string
           tipo: string
           total_linhas: number
+          updated_at: string
         }
         Insert: {
           atualizados?: number
           created_at?: string
+          erros?: number
+          etapa_atual?: string
           id?: string
           ignorados?: number
           inseridos?: number
           layout_id?: string | null
+          linhas_processadas?: number
           nome_arquivo: string
           status?: string
+          status_processamento?: string
           tipo: string
           total_linhas?: number
+          updated_at?: string
         }
         Update: {
           atualizados?: number
           created_at?: string
+          erros?: number
+          etapa_atual?: string
           id?: string
           ignorados?: number
           inseridos?: number
           layout_id?: string | null
+          linhas_processadas?: number
           nome_arquivo?: string
           status?: string
+          status_processamento?: string
           tipo?: string
           total_linhas?: number
+          updated_at?: string
         }
         Relationships: []
       }

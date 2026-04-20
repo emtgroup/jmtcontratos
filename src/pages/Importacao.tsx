@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,12 +15,15 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { CheckCircle, Upload, Loader2, AlertCircle, Unlock, Trash2 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import {
   importarBase,
+  buscarProgressoImportacaoBaseAtiva,
   liberarLockOrfao,
   limparDadosImportados,
   type EscopoLimpezaImportacao,
   type EtapaProgresso,
+  type ProgressoImportacaoBase,
 } from "@/services/importacaoBaseService";
 import type { ResumoImportacao } from "@/types/importacao";
 import { useToast } from "@/hooks/use-toast";
@@ -28,10 +31,24 @@ import { useToast } from "@/hooks/use-toast";
 const LABEL_ETAPA: Record<EtapaProgresso, string> = {
   validando: "Validando layout configurado…",
   lendo: "Lendo arquivo Excel…",
-  enviando: "Enviando arquivo para processamento…",
+  enviando: "Aplicando layout e preparando envio…",
   // Texto explícito evita sensação de travamento: após envio, o trabalho continua no servidor.
-  processando_servidor: "Processando registros no servidor…",
+  processando_servidor: "Persistindo registros e atualizando conferência no servidor…",
   finalizando: "Finalizando importação…",
+};
+
+const ORDEM_ETAPAS: EtapaProgresso[] = ["validando", "lendo", "enviando", "processando_servidor", "finalizando"];
+
+const LABEL_ETAPA_BACKEND: Record<string, string> = {
+  iniciando: "Iniciando importação no servidor…",
+  validando_lock: "Validando concorrência de importação…",
+  normalizando_dados: "Normalizando dados da planilha…",
+  classificando_registros: "Classificando registros para inserir/atualizar/ignorar…",
+  persistindo_registros: "Persistindo registros no banco…",
+  atualizando_conferencia: "Atualizando conferência materializada…",
+  consolidando_resultado: "Consolidando resultado da importação…",
+  finalizando_importacao: "Finalizando importação…",
+  erro: "Importação finalizada com erro.",
 };
 
 const LABEL_LIMPEZA: Record<EscopoLimpezaImportacao, string> = {
@@ -47,13 +64,39 @@ export default function Importacao() {
   const [importando, setImportando] = useState(false);
   const [etapa, setEtapa] = useState<EtapaProgresso | null>(null);
   const [totalPreparado, setTotalPreparado] = useState<number | null>(null);
+  const [progressoReal, setProgressoReal] = useState<ProgressoImportacaoBase | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [liberandoLock, setLiberandoLock] = useState(false);
   const [dialogLimpezaAberto, setDialogLimpezaAberto] = useState(false);
   const [escopoLimpeza, setEscopoLimpeza] = useState<EscopoLimpezaImportacao>("base_conferencia");
   const [limpando, setLimpando] = useState(false);
   const fileInputBase = useRef<HTMLInputElement>(null);
+  const pollingRef = useRef<number | null>(null);
   const { toast } = useToast();
+
+  const pararPolling = () => {
+    // Encerramos o polling explicitamente ao concluir/falhar para evitar loop eterno.
+    if (pollingRef.current !== null) {
+      window.clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  const atualizarProgressoReal = async () => {
+    try {
+      const progresso = await buscarProgressoImportacaoBaseAtiva();
+      if (!progresso) return;
+      setProgressoReal(progresso);
+
+      if (progresso.status_processamento !== "processando") {
+        pararPolling();
+      }
+    } catch {
+      // Polling não deve derrubar a tela de importação; próxima rodada tentará novamente.
+    }
+  };
+
+  useEffect(() => () => pararPolling(), []);
 
   const handleImportBase = async () => {
     if (!arquivoBase) return;
@@ -62,10 +105,32 @@ export default function Importacao() {
     setResumo(null);
     setEtapa(null);
     setTotalPreparado(null);
+    setProgressoReal(null);
 
     try {
+      // Polling leve só durante a importação ativa para ler telemetria real (importacao_id via lock).
+      pararPolling();
+      pollingRef.current = window.setInterval(() => {
+        void atualizarProgressoReal();
+      }, 1500);
+      void atualizarProgressoReal();
+
       const result = await importarBase(arquivoBase, (e) => setEtapa(e), (total) => setTotalPreparado(total));
       setResumo(result);
+      setProgressoReal((prev) =>
+        prev
+          ? {
+              ...prev,
+              status_processamento: "finalizado",
+              total_linhas: result.total_linhas,
+              linhas_processadas: result.total_linhas,
+              inseridos: result.inseridos,
+              atualizados: result.atualizados,
+              ignorados: result.ignorados,
+              erros: result.erros,
+            }
+          : prev,
+      );
       const extra = result.primeiro_erro ? ` (1º erro: ${result.primeiro_erro})` : "";
       toast({
         title: "Importação concluída",
@@ -76,10 +141,12 @@ export default function Importacao() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErro(msg);
+      setProgressoReal((prev) => (prev ? { ...prev, status_processamento: "erro" } : prev));
       toast({ title: "Erro na importação", description: msg, variant: "destructive" });
     } finally {
       setImportando(false);
       setEtapa(null);
+      pararPolling();
     }
   };
 
@@ -139,6 +206,15 @@ export default function Importacao() {
         { label: "Erros", value: resumo.erros },
       ]
     : [];
+
+  const indiceEtapaAtual = etapa ? ORDEM_ETAPAS.indexOf(etapa) : -1;
+  // Percentual sempre real: calculado apenas com telemetria do backend (linhas_processadas / total_linhas).
+  const percentualReal =
+    progressoReal && progressoReal.total_linhas > 0
+      ? Math.min(100, (progressoReal.linhas_processadas / progressoReal.total_linhas) * 100)
+      : null;
+  const etapaAtivaTexto = progressoReal ? LABEL_ETAPA_BACKEND[progressoReal.etapa_atual] ?? progressoReal.etapa_atual : etapa ? LABEL_ETAPA[etapa] : null;
+  const mostrarPainelProgresso = importando && (etapa || progressoReal);
 
   return (
     <div>
@@ -243,24 +319,81 @@ export default function Importacao() {
             </div>
 
             {/* Progresso por etapa */}
-            {importando && etapa && (
-              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
-                <div className="flex items-center gap-2">
+            {mostrarPainelProgresso && (
+              <div className="space-y-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-3">
+                <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{LABEL_ETAPA[etapa]}</span>
+                  <span>{etapaAtivaTexto}</span>
                 </div>
+                {/* Regra de honestidade operacional: só exibimos barra percentual quando vier valor real do backend. */}
+                {percentualReal !== null ? (
+                  <div className="space-y-1">
+                    <Progress value={percentualReal} />
+                    <p className="text-xs text-muted-foreground">{percentualReal.toFixed(0)}% concluído (progresso real do servidor).</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="relative h-3 w-full overflow-hidden rounded-full bg-secondary">
+                      {/* Barra indeterminada para reforçar atividade contínua sem percentual fictício. */}
+                      <div className="absolute inset-y-0 w-1/3 animate-[progress-indeterminate_1.4s_ease-in-out_infinite] rounded-full bg-primary" />
+                    </div>
+                    <p className="text-xs text-muted-foreground">Progresso percentual em tempo real ainda não disponível no backend.</p>
+                  </div>
+                )}
+
+                {/* Lista de etapas deixa explícito "onde está" sem inventar tempo restante ou percentuais. */}
+                {!progressoReal && (
+                  <div className="space-y-1">
+                    {ORDEM_ETAPAS.map((etapaItem, idx) => {
+                      const status = idx < indiceEtapaAtual ? "concluida" : idx === indiceEtapaAtual ? "ativa" : "pendente";
+                      return (
+                        <p
+                          key={etapaItem}
+                          className={`text-xs ${
+                            status === "ativa"
+                              ? "text-foreground font-medium"
+                              : status === "concluida"
+                                ? "text-muted-foreground"
+                                : "text-muted-foreground/80"
+                          }`}
+                        >
+                          {status === "concluida" ? "✓ " : status === "ativa" ? "→ " : "• "}
+                          {LABEL_ETAPA[etapaItem]}
+                        </p>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Não exibimos percentual fake; mostramos apenas métricas reais já conhecidas no cliente. */}
-                {totalPreparado !== null && (
-                  <p className="text-xs">
+                {progressoReal ? (
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <p>Processados: {progressoReal.linhas_processadas.toLocaleString("pt-BR")} / {progressoReal.total_linhas.toLocaleString("pt-BR")}</p>
+                    <p>Inseridos: {progressoReal.inseridos.toLocaleString("pt-BR")}</p>
+                    <p>Atualizados: {progressoReal.atualizados.toLocaleString("pt-BR")}</p>
+                    <p>Ignorados: {progressoReal.ignorados.toLocaleString("pt-BR")}</p>
+                    <p>Erros: {progressoReal.erros.toLocaleString("pt-BR")}</p>
+                  </div>
+                ) : totalPreparado !== null ? (
+                  <p className="text-xs text-muted-foreground">
                     {etapa === "enviando"
                       ? `Enviando ${totalPreparado.toLocaleString("pt-BR")} registros para processamento.`
                       : etapa === "finalizando"
                         ? `Finalizando importação de ${totalPreparado.toLocaleString("pt-BR")} registros.`
                         : `Processando ${totalPreparado.toLocaleString("pt-BR")} registros no servidor.`}
                   </p>
+                ) : null}
+
+                {progressoReal?.status_processamento === "erro" && (
+                  <p className="text-xs text-[hsl(var(--status-divergente))]">
+                    A importação registrou erro no servidor. Verifique a mensagem detalhada abaixo.
+                  </p>
                 )}
-                {/* Mensagem curta de espera para reduzir dúvida operacional durante processamento longo. */}
-                <p className="text-xs">O processamento pode levar alguns segundos. Não feche esta tela.</p>
+                {/* Mensagem de segurança operacional para arquivos grandes e etapas longas. */}
+                <p className="text-xs text-muted-foreground">
+                  A importação continua em execução no servidor. Não feche esta tela até a conclusão.
+                </p>
+                <p className="text-xs text-muted-foreground">Arquivos maiores podem levar mais tempo.</p>
               </div>
             )}
 
