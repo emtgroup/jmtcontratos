@@ -163,10 +163,11 @@ export async function parseExcelFile(file: File, layout: LayoutResolvido): Promi
   return linhas;
 }
 
-export type EtapaProgresso = "lendo" | "validando" | "enviando" | "processando";
+export type EtapaProgresso = "validando" | "lendo" | "enviando" | "processando_servidor" | "finalizando";
 export type OnEtapa = (etapa: EtapaProgresso) => void;
+export type OnTotalPreparado = (total: number) => void;
 
-export async function importarBase(file: File, onEtapa?: OnEtapa): Promise<ResumoImportacao> {
+export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPreparado?: OnTotalPreparado): Promise<ResumoImportacao> {
   onEtapa?.("validando");
   const layout = await carregarLayoutAtivo();
 
@@ -175,12 +176,15 @@ export async function importarBase(file: File, onEtapa?: OnEtapa): Promise<Resum
   if (linhas.length === 0) {
     throw new Error("Nenhuma linha operacional válida encontrada no arquivo (verifique linha de dados e colunas obrigatórias).");
   }
+  onTotalPreparado?.(linhas.length);
 
   onEtapa?.("enviando");
-  onEtapa?.("processando");
+  // O backend processa em lote no servidor; não há métrica contínua confiável para percentual em tempo real.
+  onEtapa?.("processando_servidor");
   const { data, error } = await supabase.functions.invoke("importar-base", {
     body: { nome_arquivo: file.name, linhas },
   });
+  onEtapa?.("finalizando");
 
   if (error) {
     let detalhe = error.message || "Erro desconhecido na função";

@@ -4,6 +4,10 @@ export interface ResumoImportacao {
   inseridos: number;
   atualizados: number;
   ignorados: number;
+  vinculados: number;
+  aguardando: number;
+  divergentes: number;
+  ambiguos: number;
   erros: number;
   primeiro_erro?: string | null;
 }
