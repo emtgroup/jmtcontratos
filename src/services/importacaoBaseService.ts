@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { supabase } from "@/integrations/supabase/client";
-import type { LinhaParseada, ResumoImportacao } from "@/types/importacao";
+import type { LinhaParseada, ResumoImportacao, ProgressoImportacaoBase } from "@/types/importacao";
 
 // Tipos lógicos obrigatórios do layout base (regra do PRD)
 const TIPOS_OBRIGATORIOS = ["contrato_vinculado", "nota_fiscal"] as const;
