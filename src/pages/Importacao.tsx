@@ -3,8 +3,25 @@ import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { CheckCircle, Upload, Loader2, AlertCircle, Unlock } from "lucide-react";
-import { importarBase, liberarLockOrfao, type EtapaProgresso } from "@/services/importacaoBaseService";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Label } from "@/components/ui/label";
+import { CheckCircle, Upload, Loader2, AlertCircle, Unlock, Trash2 } from "lucide-react";
+import {
+  importarBase,
+  liberarLockOrfao,
+  limparDadosImportados,
+  type EscopoLimpezaImportacao,
+  type EtapaProgresso,
+} from "@/services/importacaoBaseService";
 import type { ResumoImportacao } from "@/types/importacao";
 import { useToast } from "@/hooks/use-toast";
 
@@ -17,6 +34,12 @@ const LABEL_ETAPA: Record<EtapaProgresso, string> = {
   finalizando: "Finalizando importação…",
 };
 
+const LABEL_LIMPEZA: Record<EscopoLimpezaImportacao, string> = {
+  base_conferencia: "Limpar Base + Conferência",
+  complementares_conferencia: "Limpar Complementares + Conferência",
+  tudo: "Limpar Tudo",
+};
+
 export default function Importacao() {
   const [resumo, setResumo] = useState<ResumoImportacao | null>(null);
   const [layoutSelecionado, setLayoutSelecionado] = useState("");
@@ -26,6 +49,9 @@ export default function Importacao() {
   const [totalPreparado, setTotalPreparado] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [liberandoLock, setLiberandoLock] = useState(false);
+  const [dialogLimpezaAberto, setDialogLimpezaAberto] = useState(false);
+  const [escopoLimpeza, setEscopoLimpeza] = useState<EscopoLimpezaImportacao>("base_conferencia");
+  const [limpando, setLimpando] = useState(false);
   const fileInputBase = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -73,6 +99,32 @@ export default function Importacao() {
     }
   };
 
+  const handleLimparDadosImportados = async () => {
+    setLimpando(true);
+    try {
+      // Limpeza de dados é sempre explícita e só acontece após confirmação no dialog.
+      const resultado = await limparDadosImportados(escopoLimpeza);
+      setResumo(null);
+      setErro(null);
+      setArquivoBase(null);
+      if (fileInputBase.current) fileInputBase.current.value = "";
+      setDialogLimpezaAberto(false);
+
+      toast({
+        title: "Limpeza concluída",
+        description:
+          `${LABEL_LIMPEZA[resultado.escopo]} executada: ` +
+          `${resultado.registros_base_removidos} base, ${resultado.registros_complementares_removidos} complementares, ` +
+          `${resultado.conferencia_removida} conferência.`,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast({ title: "Erro ao limpar dados", description: msg, variant: "destructive" });
+    } finally {
+      setLimpando(false);
+    }
+  };
+
   const resumoItems = resumo
     ? [
         // Resumo segue os indicadores operacionais exigidos no PRD de importação.
@@ -91,6 +143,72 @@ export default function Importacao() {
   return (
     <div>
       <PageHeader title="Importação de Dados" subtitle="Importação real com persistência no Lovable Cloud" />
+
+      <div className="flex justify-end mb-4">
+        <Dialog open={dialogLimpezaAberto} onOpenChange={setDialogLimpezaAberto}>
+          <DialogTrigger asChild>
+            {/* Ação destrutiva fica secundária para não competir com o fluxo principal de importação. */}
+            <Button variant="outline" size="sm" className="text-muted-foreground" disabled={importando || liberandoLock || limpando}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Limpar dados importados
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Limpar dados importados</DialogTitle>
+              <DialogDescription>
+                Escolha o escopo da limpeza. Esta ação é destrutiva e deve ser usada apenas quando houver intenção clara.
+              </DialogDescription>
+            </DialogHeader>
+
+            <RadioGroup
+              value={escopoLimpeza}
+              onValueChange={(value) => setEscopoLimpeza(value as EscopoLimpezaImportacao)}
+              className="space-y-3"
+            >
+              <div className="flex items-start gap-3 rounded-md border p-3">
+                <RadioGroupItem value="base_conferencia" id="limpar-base" className="mt-1" />
+                <Label htmlFor="limpar-base" className="space-y-1 cursor-pointer">
+                  <span className="font-medium">Limpar Base + Conferência</span>
+                  <span className="block text-xs text-muted-foreground">Apaga registros da base operacional e toda a conferência materializada.</span>
+                </Label>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-md border p-3">
+                <RadioGroupItem value="complementares_conferencia" id="limpar-complementares" className="mt-1" />
+                <Label htmlFor="limpar-complementares" className="space-y-1 cursor-pointer">
+                  <span className="font-medium">Limpar Complementares + Conferência</span>
+                  <span className="block text-xs text-muted-foreground">Apaga registros complementares e a conferência para evitar status desatualizado.</span>
+                </Label>
+              </div>
+
+              <div className="flex items-start gap-3 rounded-md border p-3">
+                <RadioGroupItem value="tudo" id="limpar-tudo" className="mt-1" />
+                <Label htmlFor="limpar-tudo" className="space-y-1 cursor-pointer">
+                  <span className="font-medium">Limpar Tudo</span>
+                  <span className="block text-xs text-muted-foreground">Apaga base, complementares e conferência. Histórico de importações é preservado para auditoria.</span>
+                </Label>
+              </div>
+            </RadioGroup>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogLimpezaAberto(false)} disabled={limpando}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={handleLimparDadosImportados} disabled={limpando || importando || liberandoLock}>
+                {limpando ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Limpando...
+                  </>
+                ) : (
+                  "Confirmar limpeza"
+                )}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       <div className="grid md:grid-cols-2 gap-6 mb-6">
         {/* Base */}
@@ -138,7 +256,7 @@ export default function Importacao() {
                       ? `Enviando ${totalPreparado.toLocaleString("pt-BR")} registros para processamento.`
                       : etapa === "finalizando"
                         ? `Finalizando importação de ${totalPreparado.toLocaleString("pt-BR")} registros.`
-                      : `Processando ${totalPreparado.toLocaleString("pt-BR")} registros no servidor.`}
+                        : `Processando ${totalPreparado.toLocaleString("pt-BR")} registros no servidor.`}
                   </p>
                 )}
                 {/* Mensagem curta de espera para reduzir dúvida operacional durante processamento longo. */}
@@ -146,7 +264,7 @@ export default function Importacao() {
               </div>
             )}
 
-            <Button className="w-full" onClick={handleImportBase} disabled={!arquivoBase || importando}>
+            <Button className="w-full" onClick={handleImportBase} disabled={!arquivoBase || importando || limpando}>
               {importando ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importação em andamento...
@@ -161,7 +279,7 @@ export default function Importacao() {
               size="sm"
               className="w-full text-xs text-muted-foreground"
               onClick={handleLiberarLock}
-              disabled={liberandoLock || importando}
+              disabled={liberandoLock || importando || limpando}
             >
               <Unlock className="h-3.5 w-3.5 mr-1.5" />
               {liberandoLock ? "Verificando lock..." : "Liberar lock travado (>5 min)"}
