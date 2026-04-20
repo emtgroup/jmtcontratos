@@ -240,6 +240,47 @@ export type Database = {
           },
         ]
       }
+      registros_base: {
+        Row: {
+          chave_normalizada: string
+          contrato_vinculado: string
+          dados_originais: Json
+          id: string
+          nota_fiscal: string
+          placa_normalizada: string | null
+          ultima_importacao_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          chave_normalizada: string
+          contrato_vinculado: string
+          dados_originais?: Json
+          id?: string
+          nota_fiscal: string
+          placa_normalizada?: string | null
+          ultima_importacao_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          chave_normalizada?: string
+          contrato_vinculado?: string
+          dados_originais?: Json
+          id?: string
+          nota_fiscal?: string
+          placa_normalizada?: string | null
+          ultima_importacao_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "registros_base_ultima_importacao_id_fkey"
+            columns: ["ultima_importacao_id"]
+            isOneToOne: false
+            referencedRelation: "importacoes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       registros_complementares: {
         Row: {
           chave_normalizada: string
@@ -284,47 +325,6 @@ export type Database = {
           },
           {
             foreignKeyName: "registros_complementares_ultima_importacao_id_fkey"
-            columns: ["ultima_importacao_id"]
-            isOneToOne: false
-            referencedRelation: "importacoes"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      registros_base: {
-        Row: {
-          chave_normalizada: string
-          contrato_vinculado: string
-          dados_originais: Json
-          id: string
-          nota_fiscal: string
-          placa_normalizada: string | null
-          ultima_importacao_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          chave_normalizada: string
-          contrato_vinculado: string
-          dados_originais?: Json
-          id?: string
-          nota_fiscal: string
-          placa_normalizada?: string | null
-          ultima_importacao_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          chave_normalizada?: string
-          contrato_vinculado?: string
-          dados_originais?: Json
-          id?: string
-          nota_fiscal?: string
-          placa_normalizada?: string | null
-          ultima_importacao_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "registros_base_ultima_importacao_id_fkey"
             columns: ["ultima_importacao_id"]
             isOneToOne: false
             referencedRelation: "importacoes"
