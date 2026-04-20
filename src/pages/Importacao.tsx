@@ -11,8 +11,10 @@ import { useToast } from "@/hooks/use-toast";
 const LABEL_ETAPA: Record<EtapaProgresso, string> = {
   validando: "Validando layout configurado…",
   lendo: "Lendo arquivo Excel…",
-  enviando: "Enviando dados para o backend…",
-  processando: "Processando no servidor (insert/update em lote)…",
+  enviando: "Enviando arquivo para processamento…",
+  // Texto explícito evita sensação de travamento: após envio, o trabalho continua no servidor.
+  processando_servidor: "Processando registros no servidor…",
+  finalizando: "Finalizando importação…",
 };
 
 export default function Importacao() {
@@ -21,6 +23,7 @@ export default function Importacao() {
   const [arquivoBase, setArquivoBase] = useState<File | null>(null);
   const [importando, setImportando] = useState(false);
   const [etapa, setEtapa] = useState<EtapaProgresso | null>(null);
+  const [totalPreparado, setTotalPreparado] = useState<number | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [liberandoLock, setLiberandoLock] = useState(false);
   const fileInputBase = useRef<HTMLInputElement>(null);
@@ -32,14 +35,17 @@ export default function Importacao() {
     setErro(null);
     setResumo(null);
     setEtapa(null);
+    setTotalPreparado(null);
 
     try {
-      const result = await importarBase(arquivoBase, (e) => setEtapa(e));
+      const result = await importarBase(arquivoBase, (e) => setEtapa(e), (total) => setTotalPreparado(total));
       setResumo(result);
       const extra = result.primeiro_erro ? ` (1º erro: ${result.primeiro_erro})` : "";
       toast({
         title: "Importação concluída",
-        description: `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados, ${result.erros} erros${extra}`,
+        description:
+          `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados, ` +
+          `${result.vinculados} vinculados, ${result.aguardando} aguardando, ${result.divergentes} divergentes, ${result.ambiguos} ambíguos, ${result.erros} erros${extra}`,
       });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -69,10 +75,15 @@ export default function Importacao() {
 
   const resumoItems = resumo
     ? [
-        { label: "Total de linhas", value: resumo.total_linhas },
+        // Resumo segue os indicadores operacionais exigidos no PRD de importação.
+        { label: "Total lido", value: resumo.total_linhas },
         { label: "Inseridos", value: resumo.inseridos },
         { label: "Atualizados", value: resumo.atualizados },
         { label: "Ignorados", value: resumo.ignorados },
+        { label: "Vinculados", value: resumo.vinculados },
+        { label: "Aguardando", value: resumo.aguardando },
+        { label: "Divergentes", value: resumo.divergentes },
+        { label: "Ambíguos", value: resumo.ambiguos },
         { label: "Erros", value: resumo.erros },
       ]
     : [];
@@ -115,16 +126,30 @@ export default function Importacao() {
 
             {/* Progresso por etapa */}
             {importando && etapa && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{LABEL_ETAPA[etapa]}</span>
+              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>{LABEL_ETAPA[etapa]}</span>
+                </div>
+                {/* Não exibimos percentual fake; mostramos apenas métricas reais já conhecidas no cliente. */}
+                {totalPreparado !== null && (
+                  <p className="text-xs">
+                    {etapa === "enviando"
+                      ? `Enviando ${totalPreparado.toLocaleString("pt-BR")} registros para processamento.`
+                      : etapa === "finalizando"
+                        ? `Finalizando importação de ${totalPreparado.toLocaleString("pt-BR")} registros.`
+                      : `Processando ${totalPreparado.toLocaleString("pt-BR")} registros no servidor.`}
+                  </p>
+                )}
+                {/* Mensagem curta de espera para reduzir dúvida operacional durante processamento longo. */}
+                <p className="text-xs">O processamento pode levar alguns segundos. Não feche esta tela.</p>
               </div>
             )}
 
             <Button className="w-full" onClick={handleImportBase} disabled={!arquivoBase || importando}>
               {importando ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importando...
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Importação em andamento...
                 </>
               ) : (
                 "Importar Base"
@@ -200,7 +225,7 @@ export default function Importacao() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
               {resumoItems.map((item) => (
                 <div key={item.label} className="text-center p-3 rounded-md bg-muted/50">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>

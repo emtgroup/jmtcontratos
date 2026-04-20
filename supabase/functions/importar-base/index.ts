@@ -34,13 +34,6 @@ function gerarChave(contrato: string, nota: string): string {
   return `${contrato}::${nota}`;
 }
 
-// Compara dados_originais de forma estável
-function jsonEstavel(obj: unknown): string {
-  if (obj === null || typeof obj !== "object") return JSON.stringify(obj);
-  const keys = Object.keys(obj as Record<string, unknown>).sort();
-  return JSON.stringify(obj, keys);
-}
-
 // Quebra array em chunks
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -148,13 +141,13 @@ Deno.serve(async (req) => {
 
     // === BATCH SELECT: busca registros existentes pelas chaves ===
     const todasChaves = processadas.map(p => p.chave);
-    const existentesMap = new Map<string, { id: string; contrato_vinculado: string; nota_fiscal: string; placa_normalizada: string | null; dados_originais: unknown }>();
+    const existentesMap = new Map<string, { id: string; contrato_vinculado: string; nota_fiscal: string; placa_normalizada: string | null }>();
 
     // Chunk pequeno: cada chave ~14 chars vira ~30 chars URL-encoded; 150 keys ≈ 5KB de URL (limite seguro do PostgREST)
     for (const chunkChaves of chunk(todasChaves, 150)) {
       const { data: existentes, error: selErr } = await supabase
         .from("registros_base")
-        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada, dados_originais")
+        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada")
         .in("chave_normalizada", chunkChaves);
       if (selErr) throw new Error(`Erro ao buscar registros existentes: ${selErr.message}`);
       for (const r of existentes || []) existentesMap.set(r.chave_normalizada, r);
@@ -162,7 +155,7 @@ Deno.serve(async (req) => {
 
     // === Classifica em inserir / atualizar / ignorar ===
     const paraInserir: Array<Record<string, unknown>> = [];
-    const paraAtualizar: Array<{ id: string; payload: Record<string, unknown> }> = [];
+    const paraAtualizar: Array<{ id: string; chave: string; payload: Record<string, unknown> }> = [];
     let ignorados = 0;
 
     for (const p of processadas) {
@@ -177,14 +170,16 @@ Deno.serve(async (req) => {
           ultima_importacao_id: importacaoId,
         });
       } else {
+        // Regra crítica PRD: update depende SOMENTE dos campos estruturais normalizados.
+        // Não usamos dados_originais para decidir update, preservando idempotência diária.
         const mudou =
           existente.contrato_vinculado !== p.contrato ||
           existente.nota_fiscal !== p.nota ||
-          (existente.placa_normalizada || null) !== (p.placa || null) ||
-          jsonEstavel(existente.dados_originais) !== jsonEstavel(p.dados);
+          (existente.placa_normalizada || null) !== (p.placa || null);
         if (mudou) {
           paraAtualizar.push({
             id: existente.id,
+            chave: p.chave,
             payload: {
               contrato_vinculado: p.contrato,
               nota_fiscal: p.nota,
@@ -207,17 +202,6 @@ Deno.serve(async (req) => {
       inseridos += lote.length;
     }
 
-    // === BATCH UPSERT conferencia (apenas chaves novas, status aguardando) ===
-    if (paraInserir.length > 0) {
-      const confRows = paraInserir.map((r) => ({ chave_normalizada: r.chave_normalizada, status: "aguardando" }));
-      for (const lote of chunk(confRows, 500)) {
-        const { error: confErr } = await supabase
-          .from("conferencia")
-          .upsert(lote, { onConflict: "chave_normalizada" });
-        if (confErr) throw new Error(`Erro ao atualizar conferencia: ${confErr.message}`);
-      }
-    }
-
     // === UPDATEs (não há bulk update no PostgREST; faz por id em paralelo controlado) ===
     let atualizados = 0;
     const UPDATE_CONCURRENCY = 20;
@@ -234,6 +218,50 @@ Deno.serve(async (req) => {
         } else {
           atualizados++;
         }
+      }
+    }
+
+    // Reprocessa somente as chaves afetadas (insert/update), conforme PRD de reprocessamento incremental.
+    // Com complementar desabilitado, as chaves afetadas ficam "aguardando" até existir correspondência.
+    const chavesAfetadas = [
+      ...new Set<string>([
+        ...paraInserir.map((r) => String(r.chave_normalizada)),
+        ...paraAtualizar.map(({ chave }) => chave),
+      ].filter(Boolean)),
+    ];
+
+    if (chavesAfetadas.length > 0) {
+      const confRows = chavesAfetadas.map((chave) => ({
+        chave_normalizada: chave,
+        status: "aguardando",
+        origem: null,
+      }));
+      for (const lote of chunk(confRows, 500)) {
+        const { error: confErr } = await supabase
+          .from("conferencia")
+          .upsert(lote, { onConflict: "chave_normalizada" });
+        if (confErr) throw new Error(`Erro ao atualizar conferencia: ${confErr.message}`);
+      }
+    }
+
+    // Resumo de status da conferência para as chaves processadas nesta importação.
+    // Isso evita números inventados no frontend e reflete o estado materializado após o processamento.
+    const chavesProcessadas = [...new Set(processadas.map((p) => p.chave))];
+    let vinculados = 0;
+    let aguardando = 0;
+    let divergentes = 0;
+    let ambiguos = 0;
+    for (const chunkChaves of chunk(chavesProcessadas, 500)) {
+      const { data: confRows, error: confSelErr } = await supabase
+        .from("conferencia")
+        .select("status")
+        .in("chave_normalizada", chunkChaves);
+      if (confSelErr) throw new Error(`Erro ao ler status da conferencia: ${confSelErr.message}`);
+      for (const row of confRows || []) {
+        if (row.status === "vinculado") vinculados++;
+        else if (row.status === "divergente") divergentes++;
+        else if (row.status === "ambiguo") ambiguos++;
+        else aguardando++;
       }
     }
 
@@ -254,6 +282,10 @@ Deno.serve(async (req) => {
       inseridos,
       atualizados,
       ignorados,
+      vinculados,
+      aguardando,
+      divergentes,
+      ambiguos,
       erros,
       primeiro_erro: primeiroErro,
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" }, status: 200 });
