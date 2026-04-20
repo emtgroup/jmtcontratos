@@ -156,6 +156,22 @@ Nenhum dado pode ser utilizado sem normalização prévia.
 
 ---
 
+## Comentário do ajuste 4 — Regra de chave inválida após normalização
+
+Se após normalização:
+
+* contrato_vinculado resultar vazio
+ou
+* nota_fiscal resultar vazia
+
+O registro deve:
+
+→ ser descartado
+→ NÃO gerar chave_normalizada
+→ ser tratado como erro de normalização
+
+---
+
 # 9. 📌 Regra de Identidade
 
 Cada chave representa:
@@ -163,6 +179,22 @@ Cada chave representa:
 > exatamente 1 registro único
 
 Nunca pode existir duplicidade.
+
+---
+
+## Comentário do ajuste 6 — Definição de registro válido
+
+Um registro é considerado válido quando:
+
+* possui contrato_vinculado válido
+* possui nota_fiscal válida
+* foi normalizado com sucesso
+* possui chave_normalizada válida
+
+Caso qualquer condição falhe:
+
+→ o registro NÃO deve ser persistido
+→ o registro NÃO participa do sistema
 
 ---
 
@@ -179,9 +211,36 @@ Importação **incremental acumulativa**
 * chave não existe → INSERIR
 * chave existe:
 
-  * comparar campos normalizados
-  * se QUALQUER campo for diferente → ATUALIZAR
-  * se TODOS os campos forem iguais → IGNORAR
+  * comparar os dados normalizados relevantes
+  * se houver qualquer diferença → ATUALIZAR
+  * se NÃO houver diferença → IGNORAR
+
+---
+
+## Comentário do ajuste 3 — Campos relevantes para comparação
+
+Campos relevantes para comparação:
+
+* contrato_vinculado
+* nota_fiscal
+* placa_normalizada
+
+Campos analíticos (peso, data, clifor, etc):
+* NÃO devem disparar atualização
+* são apenas informativos
+
+---
+
+## Comentário do ajuste 1 — Base de comparação obrigatória
+
+A comparação deve ser feita EXCLUSIVAMENTE com base nos dados já normalizados.
+
+É proibido utilizar:
+* dados_originais completos
+* valores brutos do Excel
+* strings sem normalização
+
+A comparação deve considerar apenas os campos estruturais já normalizados.
 
 ---
 
@@ -203,9 +262,22 @@ Para cada linha:
   * não existe no complementar → INSERIR
   * existe:
 
-    * comparar dados
-    * se diferente → ATUALIZAR
-    * se igual → IGNORAR
+    * comparar os dados normalizados relevantes
+    * se houver qualquer diferença → ATUALIZAR
+    * se NÃO houver diferença → IGNORAR
+
+---
+
+## Comentário do ajuste 1 — Base de comparação obrigatória no complementar
+
+A comparação deve ser feita EXCLUSIVAMENTE com base nos dados já normalizados.
+
+É proibido utilizar:
+* dados_originais completos
+* valores brutos do Excel
+* strings sem normalização
+
+A comparação deve considerar apenas os campos estruturais já normalizados.
 
 ---
 
@@ -251,6 +323,52 @@ Match ocorre quando:
 
 ---
 
+## Comentário do ajuste 5 — Matching unidirecional e baseado na Base
+
+O matching é sempre executado a partir da Base.
+
+Para cada registro da Base:
+
+* buscar correspondente nos registros complementares
+* definir o status com base nessa busca
+
+O Complementar nunca inicia matching.
+O Complementar nunca cria vínculo por conta própria.
+
+---
+
+## Comentário do ajuste final 1 — Ordem obrigatória de processamento
+
+Ordem obrigatória de processamento:
+
+1. Executar matching principal utilizando:
+   contrato_vinculado + nota_fiscal
+
+2. Apenas se NÃO houver match:
+   executar diagnóstico secundário (nota + placa)
+
+Regras:
+
+* É proibido executar diagnóstico secundário antes do matching principal
+* É proibido misturar critérios de matching com diagnóstico
+
+---
+
+## Comentário do ajuste final 3 — Múltiplos layouts complementares válidos
+
+Se múltiplos layouts complementares retornarem correspondência válida para a mesma chave:
+
+→ o registro deve ser classificado como "Ambíguo"
+→ a origem deve ser NULL
+
+Regras:
+
+* o sistema NÃO deve escolher automaticamente entre layouts
+* o sistema NÃO deve priorizar layouts
+* a decisão deve ser sempre explícita para o usuário
+
+---
+
 # 14. 🔎 Diagnóstico Secundário (DEFINITIVO)
 
 ---
@@ -270,6 +388,24 @@ Contrato + Nota
 ```txt
 Nota + Placa
 ```
+
+---
+
+## Comentário do ajuste 1 — Regra de execução
+
+O diagnóstico secundário (Nota + Placa) só deve ser executado quando:
+
+* a nota fiscal for válida
+* a placa for válida
+
+Considera-se placa válida quando:
+* não é nula
+* não é vazia
+* após normalização possui pelo menos 1 caractere
+
+Caso a placa seja inválida ou ausente:
+→ NÃO executar diagnóstico secundário
+→ manter status como "Aguardando"
 
 ---
 
@@ -353,6 +489,20 @@ Após cada importação:
 
 ---
 
+## Comentário do ajuste final 2 — Reprocessamento após alteração
+
+Se um registro já vinculado sofrer alteração em dados relevantes:
+
+→ o registro deve ser reprocessado automaticamente
+→ o status deve ser recalculado
+
+Regras:
+
+* o sistema NÃO deve manter status antigo após alteração
+* o status deve sempre refletir o estado atual dos dados
+
+---
+
 # 19. ⚡ Performance
 
 * index obrigatório por chave_normalizada
@@ -377,6 +527,21 @@ Exibir:
 * erro deve ser explícito
 * não pode existir falha silenciosa
 * não pode existir inconsistência parcial
+
+---
+
+## Comentário do ajuste 8 — Erro de normalização
+
+Se não for possível normalizar:
+
+* contrato_vinculado
+ou
+* nota_fiscal
+
+O registro deve:
+→ ser ignorado
+→ ser contabilizado como erro
+→ NÃO ser persistido
 
 ---
 

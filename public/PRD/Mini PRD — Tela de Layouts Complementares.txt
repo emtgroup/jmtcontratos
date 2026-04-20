@@ -240,6 +240,24 @@ Diagnóstico secundário (Nota + Placa)
 
 ---
 
+## Comentário do ajuste 1 — Condição obrigatória do diagnóstico secundário
+
+O diagnóstico secundário (Nota + Placa) só deve ser executado quando:
+
+* a nota fiscal for válida
+* a placa for válida
+
+Considera-se placa válida quando:
+* não é nula
+* não é vazia
+* após normalização possui pelo menos 1 caractere
+
+Caso a placa seja inválida ou ausente:
+→ NÃO executar diagnóstico secundário
+→ manter status como "Aguardando"
+
+---
+
 # 12. 🚨 Validações Obrigatórias
 
 O sistema deve impedir salvar o layout se:

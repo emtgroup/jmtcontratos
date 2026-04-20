@@ -100,6 +100,38 @@ Valores possíveis:
 
 ---
 
+## Comentário do ajuste 3 — Regra definitiva de origem
+
+Origem representa o layout complementar responsável pelo vínculo.
+
+Regras obrigatórias:
+
+* Se houver exatamente 1 correspondência válida:
+  → origem deve ser o nome do layout
+
+* Se houver múltiplas correspondências:
+  → status deve ser "Ambíguo"
+  → origem deve ser NULL (nunca parcialmente preenchida)
+
+* É proibido preencher origem em cenários ambíguos
+
+---
+
+## Comentário do ajuste final 3 — Múltiplos layouts complementares válidos
+
+Se múltiplos layouts complementares retornarem correspondência válida para a mesma chave:
+
+→ o registro deve ser classificado como "Ambíguo"
+→ a origem deve ser NULL
+
+Regras:
+
+* o sistema NÃO deve escolher automaticamente entre layouts
+* o sistema NÃO deve priorizar layouts
+* a decisão deve ser sempre explícita para o usuário
+
+---
+
 # 5. 🔑 Regra do Status
 
 ---
@@ -176,6 +208,24 @@ DIAGNÓSTICO = nota_fiscal + placa
 
 ---
 
+## Comentário do ajuste 1 — Condição obrigatória do diagnóstico secundário
+
+O diagnóstico secundário (Nota + Placa) só deve ser executado quando:
+
+* a nota fiscal for válida
+* a placa for válida
+
+Considera-se placa válida quando:
+* não é nula
+* não é vazia
+* após normalização possui pelo menos 1 caractere
+
+Caso a placa seja inválida ou ausente:
+→ NÃO executar diagnóstico secundário
+→ manter status como "Aguardando"
+
+---
+
 ## Comportamento
 
 1. Encontrou 1 registro:
@@ -217,6 +267,16 @@ A tela deve refletir sempre o estado atual do sistema.
 * após qualquer importação → dados já atualizados
 * não precisa botão de atualizar
 * não precisa botão de reprocessar
+
+---
+
+## Comentário do ajuste 6 — Conferência NÃO recalcula
+
+A tela de conferência NÃO executa cálculos.
+
+Ela deve consumir exclusivamente a tabela "conferencia".
+
+Nenhuma lógica de matching ou diagnóstico deve existir no frontend.
 
 ---
 
