@@ -29,6 +29,8 @@ function letraParaIndice(letra: string): number {
 
 interface LayoutResolvido {
   layoutId: string;
+  origemLayout: "base" | "complementar";
+  nomeLayout: string;
   linhaCabecalho: number;
   linhaDados: number;
   colunas: Array<{
@@ -84,6 +86,8 @@ async function carregarLayoutAtivo(): Promise<LayoutResolvido> {
 
   return {
     layoutId: layout.id,
+    origemLayout: "base",
+    nomeLayout: "GRL053",
     linhaCabecalho: layout.linha_cabecalho,
     linhaDados: layout.linha_dados,
     colunas: colunasNorm,
@@ -108,7 +112,7 @@ function resolverIndices(layout: LayoutResolvido, headerRow: unknown[]): LayoutC
     if (idx === -1) {
       const disponiveis = headersNorm.filter(h => h.length > 0).join(", ");
       throw new Error(
-        `Coluna "${col.nomeExcel}" (${col.tipoNormalizado}) não encontrada no cabeçalho da linha ${layout.linhaCabecalho}. Cabeçalhos disponíveis: [${disponiveis}]`
+        `Coluna "${col.nomeExcel}" (${col.tipoNormalizado}) não encontrada no cabeçalho da linha ${layout.linhaCabecalho} do layout ${layout.origemLayout} "${layout.nomeLayout}". Cabeçalhos disponíveis: [${disponiveis}]`
       );
     }
 
@@ -130,9 +134,11 @@ export async function parseExcelFile(file: File, layout: LayoutResolvido): Promi
     throw new Error(`Arquivo possui ${rawData.length} linhas, mas o layout exige dados a partir da linha ${layout.linhaDados}.`);
   }
 
+  // O parser sempre usa a linha de cabeçalho definida no layout salvo (base ou complementar).
   const headerRow = (rawData[layout.linhaCabecalho - 1] || []) as unknown[];
   const resolved = resolverIndices(layout, headerRow);
 
+  // O parser sempre começa os dados na linha definida no layout salvo (base ou complementar).
   const dataRows = rawData.slice(layout.linhaDados - 1);
   const contratoIdx = resolved.indicePorTipo.get("contrato_vinculado")!;
   const notaIdx = resolved.indicePorTipo.get("nota_fiscal")!;
@@ -266,12 +272,21 @@ export interface LayoutComplementarResumo {
 export async function listarLayoutsComplementaresAtivos(): Promise<LayoutComplementarResumo[]> {
   const { data, error } = await supabase
     .from("layouts_complementares")
-    .select("id, nome")
+    .select("id, nome, created_at")
     .eq("ativo", true)
-    .order("nome", { ascending: true });
+    .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Erro ao listar layouts complementares: ${error.message}`);
-  return (data || []).map((l) => ({ id: l.id, nome: l.nome }));
+  // Evita seleção ambígua na importação quando existir mais de um layout ativo com o mesmo nome.
+  // Mantemos o mais recente por nome para garantir que a importação use a configuração mais atual.
+  const maisRecentePorNome = new Map<string, LayoutComplementarResumo>();
+  for (const l of data || []) {
+    if (!maisRecentePorNome.has(l.nome)) {
+      maisRecentePorNome.set(l.nome, { id: l.id, nome: l.nome });
+    }
+  }
+
+  return [...maisRecentePorNome.values()].sort((a, b) => a.nome.localeCompare(b.nome));
 }
 
 async function carregarLayoutComplementarAtivo(layoutId: string): Promise<LayoutResolvido> {
@@ -319,6 +334,8 @@ async function carregarLayoutComplementarAtivo(layoutId: string): Promise<Layout
 
   return {
     layoutId: layout.id,
+    origemLayout: "complementar",
+    nomeLayout: layout.nome,
     linhaCabecalho: layout.linha_cabecalho,
     linhaDados: layout.linha_dados,
     colunas: colunasNorm,
@@ -334,6 +351,8 @@ export async function importarComplementar(
   if (!layoutComplementarId) throw new Error("Selecione um layout complementar antes de importar.");
 
   onEtapa?.("validando");
+  // No fluxo complementar, o mapeamento vem exclusivamente do layout complementar salvo
+  // (tipo -> nome_coluna_excel), sem depender de nomes fixos do layout base.
   const layout = await carregarLayoutComplementarAtivo(layoutComplementarId);
 
   onEtapa?.("lendo");
