@@ -167,6 +167,58 @@ export type EtapaProgresso = "validando" | "lendo" | "enviando" | "processando_s
 export type OnEtapa = (etapa: EtapaProgresso) => void;
 export type OnTotalPreparado = (total: number) => void;
 
+export interface EstadoBaseConsolidada {
+  total_registros_base: number;
+  total_vinculados: number;
+  total_aguardando: number;
+  total_divergentes: number;
+  total_ambiguos: number;
+}
+
+async function contarTabela(nomeTabela: "registros_base" | "conferencia"): Promise<number> {
+  const { count, error } = await supabase
+    .from(nomeTabela)
+    .select("id", { count: "exact", head: true });
+
+  if (error) throw new Error(`Erro ao contar ${nomeTabela}: ${error.message}`);
+  return count ?? 0;
+}
+
+async function contarStatus(status: "vinculado" | "aguardando" | "divergente" | "ambiguo"): Promise<number> {
+  const { count, error } = await supabase
+    .from("conferencia")
+    .select("id", { count: "exact", head: true })
+    .eq("status", status);
+
+  if (error) throw new Error(`Erro ao contar conferência (${status}): ${error.message}`);
+  return count ?? 0;
+}
+
+export async function carregarEstadoBaseConsolidada(): Promise<EstadoBaseConsolidada> {
+  // Estes números são do estado consolidado atual do banco (não da última execução de importação).
+  const [
+    totalBase,
+    totalVinculados,
+    totalAguardando,
+    totalDivergentes,
+    totalAmbiguos,
+  ] = await Promise.all([
+    contarTabela("registros_base"),
+    contarStatus("vinculado"),
+    contarStatus("aguardando"),
+    contarStatus("divergente"),
+    contarStatus("ambiguo"),
+  ]);
+
+  return {
+    total_registros_base: totalBase,
+    total_vinculados: totalVinculados,
+    total_aguardando: totalAguardando,
+    total_divergentes: totalDivergentes,
+    total_ambiguos: totalAmbiguos,
+  };
+}
+
 export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPreparado?: OnTotalPreparado): Promise<ResumoImportacao> {
   onEtapa?.("validando");
   const layout = await carregarLayoutAtivo();

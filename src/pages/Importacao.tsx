@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -14,11 +14,13 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, Upload, Loader2, AlertCircle, Unlock, Trash2 } from "lucide-react";
+import { CheckCircle, Upload, Loader2, AlertCircle, Unlock, Trash2, RefreshCcw } from "lucide-react";
 import {
   importarBase,
   liberarLockOrfao,
   limparDadosImportados,
+  carregarEstadoBaseConsolidada,
+  type EstadoBaseConsolidada,
   type EscopoLimpezaImportacao,
   type EtapaProgresso,
 } from "@/services/importacaoBaseService";
@@ -40,8 +42,19 @@ const LABEL_LIMPEZA: Record<EscopoLimpezaImportacao, string> = {
   tudo: "Limpar Tudo",
 };
 
+const ESTADO_INICIAL_CONSOLIDADO: EstadoBaseConsolidada = {
+  total_registros_base: 0,
+  total_vinculados: 0,
+  total_aguardando: 0,
+  total_divergentes: 0,
+  total_ambiguos: 0,
+};
+
 export default function Importacao() {
   const [resumo, setResumo] = useState<ResumoImportacao | null>(null);
+  const [estadoConsolidado, setEstadoConsolidado] = useState<EstadoBaseConsolidada>(ESTADO_INICIAL_CONSOLIDADO);
+  const [carregandoConsolidado, setCarregandoConsolidado] = useState(false);
+  const [erroConsolidado, setErroConsolidado] = useState<string | null>(null);
   const [layoutSelecionado, setLayoutSelecionado] = useState("");
   const [arquivoBase, setArquivoBase] = useState<File | null>(null);
   const [importando, setImportando] = useState(false);
@@ -54,6 +67,25 @@ export default function Importacao() {
   const [limpando, setLimpando] = useState(false);
   const fileInputBase = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  const carregarConsolidado = async () => {
+    setCarregandoConsolidado(true);
+    setErroConsolidado(null);
+    try {
+      // Este bloco sempre lê o estado atual consolidado no banco e não usa dados da última importação.
+      const dados = await carregarEstadoBaseConsolidada();
+      setEstadoConsolidado(dados);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErroConsolidado(msg);
+    } finally {
+      setCarregandoConsolidado(false);
+    }
+  };
+
+  useEffect(() => {
+    void carregarConsolidado();
+  }, []);
 
   const handleImportBase = async () => {
     if (!arquivoBase) return;
@@ -73,6 +105,9 @@ export default function Importacao() {
           `${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.ignorados} ignorados, ` +
           `${result.vinculados} vinculados, ${result.aguardando} aguardando, ${result.divergentes} divergentes, ${result.ambiguos} ambíguos, ${result.erros} erros${extra}`,
       });
+
+      // Recarrega o consolidado após sucesso para evitar percepção de snapshot da última execução.
+      await carregarConsolidado();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErro(msg);
@@ -117,6 +152,8 @@ export default function Importacao() {
           `${resultado.registros_base_removidos} base, ${resultado.registros_complementares_removidos} complementares, ` +
           `${resultado.conferencia_removida} conferência.`,
       });
+
+      await carregarConsolidado();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       toast({ title: "Erro ao limpar dados", description: msg, variant: "destructive" });
@@ -125,20 +162,24 @@ export default function Importacao() {
     }
   };
 
-  const resumoItems = resumo
+  const resumoExecucaoItems = resumo
     ? [
-        // Resumo segue os indicadores operacionais exigidos no PRD de importação.
+        // Resultado da importação atual: descreve só esta execução (ação recente), não o consolidado.
         { label: "Total lido", value: resumo.total_linhas },
         { label: "Inseridos", value: resumo.inseridos },
         { label: "Atualizados", value: resumo.atualizados },
         { label: "Ignorados", value: resumo.ignorados },
-        { label: "Vinculados", value: resumo.vinculados },
-        { label: "Aguardando", value: resumo.aguardando },
-        { label: "Divergentes", value: resumo.divergentes },
-        { label: "Ambíguos", value: resumo.ambiguos },
-        { label: "Erros", value: resumo.erros },
       ]
     : [];
+
+  const resumoConsolidadoItems = [
+    // Estado atual consolidado: sempre calculado a partir das tabelas operacionais atuais do banco.
+    { label: "Total na Base", value: estadoConsolidado.total_registros_base },
+    { label: "Vinculados", value: estadoConsolidado.total_vinculados },
+    { label: "Aguardando", value: estadoConsolidado.total_aguardando },
+    { label: "Divergentes", value: estadoConsolidado.total_divergentes },
+    { label: "Ambíguos", value: estadoConsolidado.total_ambiguos },
+  ];
 
   return (
     <div>
@@ -333,23 +374,48 @@ export default function Importacao() {
         </Card>
       )}
 
-      {/* Resumo */}
+      {/* Resultado da importação atual */}
       {resumo && (
-        <Card className="border-l-4 border-l-[hsl(var(--status-vinculado))]">
+        <Card className="border-l-4 border-l-[hsl(var(--status-vinculado))] mb-6">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-[hsl(var(--status-vinculado))]" />
-              Resumo da Importação
+              Resultado da Importação Atual
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-              {resumoItems.map((item) => (
+            <p className="text-xs text-muted-foreground mb-3">
+              Estes números representam apenas a última execução enviada agora.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {resumoExecucaoItems.map((item) => (
                 <div key={item.label} className="text-center p-3 rounded-md bg-muted/50">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
                   <p className="text-xl font-bold mt-1">{item.value}</p>
                 </div>
               ))}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4">
+              <div className="text-center p-2 rounded-md bg-muted/30">
+                <p className="text-[11px] text-muted-foreground uppercase">Vinculados</p>
+                <p className="font-semibold">{resumo.vinculados}</p>
+              </div>
+              <div className="text-center p-2 rounded-md bg-muted/30">
+                <p className="text-[11px] text-muted-foreground uppercase">Aguardando</p>
+                <p className="font-semibold">{resumo.aguardando}</p>
+              </div>
+              <div className="text-center p-2 rounded-md bg-muted/30">
+                <p className="text-[11px] text-muted-foreground uppercase">Divergentes</p>
+                <p className="font-semibold">{resumo.divergentes}</p>
+              </div>
+              <div className="text-center p-2 rounded-md bg-muted/30">
+                <p className="text-[11px] text-muted-foreground uppercase">Ambíguos</p>
+                <p className="font-semibold">{resumo.ambiguos}</p>
+              </div>
+              <div className="text-center p-2 rounded-md bg-muted/30">
+                <p className="text-[11px] text-muted-foreground uppercase">Erros</p>
+                <p className="font-semibold">{resumo.erros}</p>
+              </div>
             </div>
             {resumo.primeiro_erro && (
               <div className="mt-4 text-xs text-muted-foreground font-mono bg-muted/40 rounded-md px-3 py-2 break-words">
@@ -359,6 +425,43 @@ export default function Importacao() {
           </CardContent>
         </Card>
       )}
+
+      {/* Estado consolidado */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Estado Atual do Sistema (Base Consolidada)</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Estes indicadores vêm das tabelas consolidadas (`registros_base` + `conferencia`) e refletem o estado real atual.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={carregarConsolidado}
+            disabled={carregandoConsolidado || importando || limpando}
+          >
+            {carregandoConsolidado ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCcw className="h-4 w-4 mr-2" />}
+            Atualizar
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {erroConsolidado ? (
+            <div className="text-xs text-[hsl(var(--status-divergente))] font-mono bg-[hsl(var(--status-divergente)/0.08)] rounded-md px-3 py-2">
+              Falha ao carregar estado consolidado: {erroConsolidado}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              {resumoConsolidadoItems.map((item) => (
+                <div key={item.label} className="text-center p-3 rounded-md bg-muted/50">
+                  <p className="text-xs text-muted-foreground uppercase tracking-wider">{item.label}</p>
+                  <p className="text-xl font-bold mt-1">{item.value}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
