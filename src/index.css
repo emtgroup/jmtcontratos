@@ -91,3 +91,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer utilities {
+  /* Animação de progresso indeterminado para feedback visual contínuo sem percentual inventado. */
+  @keyframes progress-indeterminate {
+    0% {
+      left: -35%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
+}

@@ -96,7 +96,11 @@ export default function Importacao() {
     setTotalPreparado(null);
 
     try {
-      const result = await importarBase(arquivoBase, (e) => setEtapa(e), (total) => setTotalPreparado(total));
+      const result = await importarBase(
+        arquivoBase,
+        (e) => setEtapa(e),
+        (total) => setTotalPreparado(total),
+      );
       setResumo(result);
       const extra = result.primeiro_erro ? ` (1º erro: ${result.primeiro_erro})` : "";
       toast({
@@ -183,13 +187,21 @@ export default function Importacao() {
 
   return (
     <div>
-      <PageHeader title="Importação de Dados" subtitle="Importação real com persistência no Lovable Cloud" />
+      <PageHeader
+        title="Importação de Dados"
+        subtitle="Informe o Relatório GRL053 (Base) e os relatórios complementares."
+      />
 
       <div className="flex justify-end mb-4">
         <Dialog open={dialogLimpezaAberto} onOpenChange={setDialogLimpezaAberto}>
           <DialogTrigger asChild>
             {/* Ação destrutiva fica secundária para não competir com o fluxo principal de importação. */}
-            <Button variant="outline" size="sm" className="text-muted-foreground" disabled={importando || liberandoLock || limpando}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-muted-foreground"
+              disabled={importando || liberandoLock || limpando}
+            >
               <Trash2 className="h-4 w-4 mr-2" />
               Limpar dados importados
             </Button>
@@ -198,7 +210,8 @@ export default function Importacao() {
             <DialogHeader>
               <DialogTitle>Limpar dados importados</DialogTitle>
               <DialogDescription>
-                Escolha o escopo da limpeza. Esta ação é destrutiva e deve ser usada apenas quando houver intenção clara.
+                Escolha o escopo da limpeza. Esta ação é destrutiva e deve ser usada apenas quando houver intenção
+                clara.
               </DialogDescription>
             </DialogHeader>
 
@@ -211,7 +224,9 @@ export default function Importacao() {
                 <RadioGroupItem value="base_conferencia" id="limpar-base" className="mt-1" />
                 <Label htmlFor="limpar-base" className="space-y-1 cursor-pointer">
                   <span className="font-medium">Limpar Base + Conferência</span>
-                  <span className="block text-xs text-muted-foreground">Apaga registros da base operacional e toda a conferência materializada.</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Apaga registros da base operacional e toda a conferência materializada.
+                  </span>
                 </Label>
               </div>
 
@@ -219,7 +234,9 @@ export default function Importacao() {
                 <RadioGroupItem value="complementares_conferencia" id="limpar-complementares" className="mt-1" />
                 <Label htmlFor="limpar-complementares" className="space-y-1 cursor-pointer">
                   <span className="font-medium">Limpar Complementares + Conferência</span>
-                  <span className="block text-xs text-muted-foreground">Apaga registros complementares e a conferência para evitar status desatualizado.</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Apaga registros complementares e a conferência para evitar status desatualizado.
+                  </span>
                 </Label>
               </div>
 
@@ -227,7 +244,9 @@ export default function Importacao() {
                 <RadioGroupItem value="tudo" id="limpar-tudo" className="mt-1" />
                 <Label htmlFor="limpar-tudo" className="space-y-1 cursor-pointer">
                   <span className="font-medium">Limpar Tudo</span>
-                  <span className="block text-xs text-muted-foreground">Apaga base, complementares e conferência. Histórico de importações é preservado para auditoria.</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Apaga base, complementares e conferência. Histórico de importações é preservado para auditoria.
+                  </span>
                 </Label>
               </div>
             </RadioGroup>
@@ -236,7 +255,11 @@ export default function Importacao() {
               <Button variant="outline" onClick={() => setDialogLimpezaAberto(false)} disabled={limpando}>
                 Cancelar
               </Button>
-              <Button variant="destructive" onClick={handleLimparDadosImportados} disabled={limpando || importando || liberandoLock}>
+              <Button
+                variant="destructive"
+                onClick={handleLimparDadosImportados}
+                disabled={limpando || importando || liberandoLock}
+              >
                 {limpando ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -259,7 +282,8 @@ export default function Importacao() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-xs text-muted-foreground">
-              Etapa 1: carregue o relatório base oficial (GRL053). Layout é lido de /configuracoes. Importação incremental — nunca destrutiva.
+              Etapa 1: carregue o relatório base oficial (GRL053). Layout é lido de /configuracoes. Importação
+              incremental — nunca destrutiva.
             </p>
             <input
               ref={fileInputBase}
