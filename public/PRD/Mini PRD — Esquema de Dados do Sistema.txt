@@ -1,0 +1,348 @@
+
+# 📘 Mini PRD — Esquema de Dados do Sistema
+
+---
+
+# 1. 🎯 Objetivo
+
+Definir a estrutura mínima e oficial de dados do sistema para:
+
+- evitar decisões implícitas do Lovable/Codex
+- garantir consistência com o PRD global
+- manter o sistema determinístico e auditável
+
+---
+
+# 2. 🧠 Princípio Fundamental
+
+```txt
+O banco de dados NÃO é decidido pela IA.
+
+Ele é definido pelo PRD.
+
+A IA apenas implementa.
+````
+
+---
+
+# 3. 🧱 Estrutura Geral do Banco
+
+O sistema é composto por 7 entidades principais:
+
+1. importacoes
+2. layouts_base
+3. layouts_base_colunas
+4. layouts_complementares
+5. layouts_complementares_colunas
+6. registros_base
+7. registros_complementares
+8. conferencia
+
+---
+
+# 4. 📦 Tabela: importacoes
+
+## Objetivo
+
+Registrar histórico completo de importações (auditoria)
+
+## Campos
+
+* id (uuid)
+* tipo (base | complementar)
+* layout_id (uuid | null)
+* nome_arquivo (text)
+* total_linhas (int)
+* inseridos (int)
+* atualizados (int)
+* ignorados (int)
+* created_at (timestamp)
+
+---
+
+# 5. 📦 Tabela: layouts_base
+
+## Objetivo
+
+Configuração do layout do GRL053
+
+## Campos
+
+* id (uuid)
+* nome (text)
+* ativo (boolean)
+* created_at
+
+---
+
+# 6. 📦 Tabela: layouts_base_colunas
+
+## Objetivo
+
+Mapeamento das colunas do Excel → tipos do sistema
+
+## Campos
+
+* id (uuid)
+* layout_base_id (uuid)
+* nome_coluna_excel (text)
+* apelido (text)
+* tipo_coluna (enum)
+
+## Tipos válidos
+
+* contrato_vinculado
+* nota_fiscal
+* placa
+* peso_fiscal
+* data
+* clifor
+* outros
+
+---
+
+# 7. 📦 Tabela: layouts_complementares
+
+## Objetivo
+
+Cadastro dos layouts complementares (Inpasa, FS, etc)
+
+## Campos
+
+* id (uuid)
+* nome (text)
+* ativo (boolean)
+* created_at
+
+---
+
+# 8. 📦 Tabela: layouts_complementares_colunas
+
+## Objetivo
+
+Mapeamento DE/PARA dos layouts complementares
+
+## Campos
+
+* id (uuid)
+* layout_complementar_id (uuid)
+* nome_coluna_excel (text)
+* apelido (text)
+* tipo_coluna (enum)
+
+(mesmos tipos do base)
+
+---
+
+# 9. 📦 Tabela: registros_base
+
+## Objetivo
+
+Tabela operacional principal (fonte da verdade)
+
+## Regra crítica
+
+```txt
+EXATAMENTE 1 registro por chave_normalizada
+```
+
+## Campos
+
+* id (uuid)
+
+* chave_normalizada (text) ← UNIQUE
+
+* contrato_vinculado (text)
+
+* nota_fiscal (text)
+
+* placa_normalizada (text | null)
+
+* dados_originais (jsonb)
+
+* ultima_importacao_id (uuid)
+
+* updated_at (timestamp)
+
+---
+
+# 10. 📦 Tabela: registros_complementares
+
+## Objetivo
+
+Dados complementares vinculados à base
+
+## Regra crítica
+
+```txt
+EXATAMENTE 1 registro por chave + layout
+```
+
+## Campos
+
+* id (uuid)
+
+* layout_complementar_id (uuid)
+
+* chave_normalizada (text)
+
+* contrato_vinculado (text)
+
+* nota_fiscal (text)
+
+* placa_normalizada (text | null)
+
+* dados_originais (jsonb)
+
+* ultima_importacao_id (uuid)
+
+* updated_at (timestamp)
+
+---
+
+## Índice obrigatório
+
+```txt
+UNIQUE (layout_complementar_id, chave_normalizada)
+```
+
+---
+
+# 11. 📦 Tabela: conferencia
+
+## Objetivo
+
+Materializar o resultado da análise (evitar recalcular toda hora)
+
+## Campos
+
+* id (uuid)
+
+* chave_normalizada (text) ← UNIQUE
+
+* status (enum)
+
+* origem (text | null)
+
+## Status possíveis
+
+* vinculado
+* aguardando
+* divergente
+* ambiguo
+
+---
+
+# 12. 🔑 Regra de Chave (GLOBAL)
+
+```txt
+chave_normalizada = contrato_vinculado + nota_fiscal
+```
+
+---
+
+## Regras
+
+* obrigatória
+* única
+* não configurável
+* usada em TODAS as tabelas
+
+---
+
+# 13. 🧼 Regra de Normalização
+
+Aplicada ANTES de persistir
+
+## contrato
+
+* remover não numéricos
+* considerar apenas antes do hífen
+
+## nota
+
+* apenas números
+
+## placa
+
+* maiúsculo
+* sem espaço
+* sem hífen
+
+---
+
+# 14. 🔗 Relacionamentos
+
+* registros_base 1 → 1 conferencia
+* registros_base 1 → N registros_complementares
+* importacoes 1 → N registros (via ultima_importacao_id)
+
+---
+
+# 15. ⚠️ Regras Críticas
+
+---
+
+## 15.1 Base
+
+* nunca deletar
+* nunca sobrescrever sem comparação
+* sempre incremental
+
+---
+
+## 15.2 Complementar
+
+* nunca cria base
+* nunca altera contrato da base
+* nunca remove dados
+
+---
+
+## 15.3 Conferência
+
+* não é editável manualmente
+* sempre derivada do processamento
+
+---
+
+# 16. 🚫 Proibições
+
+O sistema NÃO deve:
+
+* criar chave alternativa
+* permitir duplicidade
+* depender da ordem de importação
+* usar placa como chave
+* inferir dados
+* apagar histórico
+
+---
+
+# 17. ⚡ Performance
+
+* index obrigatório em chave_normalizada
+* proibido loop N x N
+* matching sempre por chave
+
+---
+
+# 18. 🧠 Filosofia Final
+
+```txt
+Banco simples → regra forte → comportamento previsível
+```
+
+---
+
+# 19. 🎯 Resultado Esperado
+
+✔ banco consistente
+✔ zero duplicidade
+✔ auditável
+✔ alinhado ao PRD
+✔ impossível de “alucinar”
+
+```
+
+---
