@@ -254,6 +254,122 @@ export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPrepara
   return data as ResumoImportacao;
 }
 
+// ============================================================
+// IMPORTAÇÃO COMPLEMENTAR
+// ============================================================
+
+export interface LayoutComplementarResumo {
+  id: string;
+  nome: string;
+}
+
+export async function listarLayoutsComplementaresAtivos(): Promise<LayoutComplementarResumo[]> {
+  const { data, error } = await supabase
+    .from("layouts_complementares")
+    .select("id, nome")
+    .eq("ativo", true)
+    .order("nome", { ascending: true });
+
+  if (error) throw new Error(`Erro ao listar layouts complementares: ${error.message}`);
+  return (data || []).map((l) => ({ id: l.id, nome: l.nome }));
+}
+
+async function carregarLayoutComplementarAtivo(layoutId: string): Promise<LayoutResolvido> {
+  const { data: layout, error: lErr } = await supabase
+    .from("layouts_complementares")
+    .select("id, nome, linha_cabecalho, linha_dados, ativo")
+    .eq("id", layoutId)
+    .maybeSingle();
+
+  if (lErr) throw new Error(`Erro ao carregar layout complementar: ${lErr.message}`);
+  if (!layout) throw new Error("Layout complementar não encontrado.");
+  if (!layout.ativo) throw new Error(`Layout complementar "${layout.nome}" está inativo.`);
+
+  const { data: colunas, error: cErr } = await supabase
+    .from("layouts_complementares_colunas")
+    .select("tipo_coluna, nome_coluna_excel, ordem")
+    .eq("layout_complementar_id", layout.id)
+    .order("ordem", { ascending: true });
+
+  if (cErr) throw new Error(`Erro ao carregar colunas do layout complementar: ${cErr.message}`);
+  if (!colunas || colunas.length === 0) {
+    throw new Error(`Layout complementar "${layout.nome}" não possui colunas configuradas.`);
+  }
+
+  const colunasNorm = colunas.map((c) => ({
+    tipoNormalizado: normalizaTipo(c.tipo_coluna),
+    nomeExcel: c.nome_coluna_excel,
+  }));
+
+  const contagem = new Map<string, number>();
+  for (const c of colunasNorm) contagem.set(c.tipoNormalizado, (contagem.get(c.tipoNormalizado) || 0) + 1);
+
+  for (const tipo of TIPOS_OBRIGATORIOS) {
+    const n = contagem.get(tipo) || 0;
+    if (n === 0) {
+      const tiposEncontrados = [...new Set(colunasNorm.map((c) => c.tipoNormalizado))].join(", ");
+      throw new Error(
+        `Layout complementar "${layout.nome}" inválido: tipo "${tipo}" ausente. Tipos configurados: [${tiposEncontrados}]`,
+      );
+    }
+    if (n > 1) {
+      throw new Error(`Layout complementar "${layout.nome}" inválido: tipo "${tipo}" duplicado (${n} colunas).`);
+    }
+  }
+
+  return {
+    layoutId: layout.id,
+    linhaCabecalho: layout.linha_cabecalho,
+    linhaDados: layout.linha_dados,
+    colunas: colunasNorm,
+  };
+}
+
+export async function importarComplementar(
+  file: File,
+  layoutComplementarId: string,
+  onEtapa?: OnEtapa,
+  onTotalPreparado?: OnTotalPreparado,
+): Promise<ResumoImportacao> {
+  if (!layoutComplementarId) throw new Error("Selecione um layout complementar antes de importar.");
+
+  onEtapa?.("validando");
+  const layout = await carregarLayoutComplementarAtivo(layoutComplementarId);
+
+  onEtapa?.("lendo");
+  const linhas = await parseExcelFile(file, layout);
+  if (linhas.length === 0) {
+    throw new Error("Nenhuma linha operacional válida encontrada no arquivo (verifique linha de dados e colunas obrigatórias).");
+  }
+  onTotalPreparado?.(linhas.length);
+
+  onEtapa?.("enviando");
+  onEtapa?.("processando_servidor");
+  const { data, error } = await supabase.functions.invoke("importar-complementar", {
+    body: {
+      layout_complementar_id: layoutComplementarId,
+      nome_arquivo: file.name,
+      linhas,
+    },
+  });
+  onEtapa?.("finalizando");
+
+  if (error) {
+    let detalhe = error.message || "Erro desconhecido na função";
+    try {
+      const ctx = (error as unknown as { context?: { json?: () => Promise<{ error?: string }> } }).context;
+      if (ctx?.json) {
+        const body = await ctx.json();
+        if (body?.error) detalhe = body.error;
+      }
+    } catch { /* ignore */ }
+    throw new Error(detalhe);
+  }
+  if (data?.error) throw new Error(data.error);
+
+  return data as ResumoImportacao;
+}
+
 export async function buscarProgressoImportacaoBaseAtiva(): Promise<ProgressoImportacaoBase | null> {
   // Polling leve: descobrimos o importacao_id ativo via lock e depois lemos a telemetria real na tabela importacoes.
   const { data: lock, error: lockError } = await supabase
