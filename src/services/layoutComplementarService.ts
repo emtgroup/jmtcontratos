@@ -101,13 +101,14 @@ export async function saveLayoutComplementar(
   colunas: LayoutComplementarColuna[]
 ): Promise<LayoutComplementarCompleto> {
   let layoutId = layout.id;
+  const nomeNormalizado = layout.nome.trim();
 
   if (layoutId) {
     // Atualiza layout existente
     const { error } = await supabase
       .from("layouts_complementares")
       .update({
-        nome: layout.nome,
+        nome: nomeNormalizado,
         linha_cabecalho: layout.linha_cabecalho,
         linha_dados: layout.linha_dados,
       })
@@ -117,23 +118,54 @@ export async function saveLayoutComplementar(
       throw new Error(`Erro ao atualizar layout complementar: ${error.message}`);
     }
   } else {
-    // Cria novo layout complementar
-    const { data, error } = await supabase
+    // Evita duplicar layouts com mesmo nome (ex.: "Inpasa"), o que gera seleção ambígua na importação.
+    // Se já existir layout ativo com o mesmo nome, reutiliza o registro existente e atualiza os metadados.
+    const { data: existenteMesmoNome, error: existenteErr } = await supabase
       .from("layouts_complementares")
-      .insert({
-        nome: layout.nome,
-        ativo: true,
-        linha_cabecalho: layout.linha_cabecalho,
-        linha_dados: layout.linha_dados,
-      })
       .select("id")
-      .single();
+      .eq("nome", nomeNormalizado)
+      .eq("ativo", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (error || !data) {
-      throw new Error(`Erro ao criar layout complementar: ${error?.message}`);
+    if (existenteErr) {
+      throw new Error(`Erro ao verificar layout complementar existente: ${existenteErr.message}`);
     }
 
-    layoutId = data.id;
+    if (existenteMesmoNome?.id) {
+      layoutId = existenteMesmoNome.id;
+      const { error: updateMesmoNomeErr } = await supabase
+        .from("layouts_complementares")
+        .update({
+          nome: nomeNormalizado,
+          linha_cabecalho: layout.linha_cabecalho,
+          linha_dados: layout.linha_dados,
+        })
+        .eq("id", layoutId);
+
+      if (updateMesmoNomeErr) {
+        throw new Error(`Erro ao atualizar layout complementar existente: ${updateMesmoNomeErr.message}`);
+      }
+    } else {
+      // Cria novo layout complementar somente quando não existe outro ativo com o mesmo nome.
+      const { data, error } = await supabase
+        .from("layouts_complementares")
+        .insert({
+          nome: nomeNormalizado,
+          ativo: true,
+          linha_cabecalho: layout.linha_cabecalho,
+          linha_dados: layout.linha_dados,
+        })
+        .select("id")
+        .single();
+
+      if (error || !data) {
+        throw new Error(`Erro ao criar layout complementar: ${error?.message}`);
+      }
+
+      layoutId = data.id;
+    }
   }
 
   // --- Sincronização de colunas (mesmo padrão do base) ---
