@@ -156,6 +156,22 @@ Nenhum dado entra no sistema sem normalização.
 
 ---
 
+## Comentário do ajuste 4 — Regra de chave inválida após normalização
+
+Se após normalização:
+
+* contrato_vinculado resultar vazio
+ou
+* nota_fiscal resultar vazia
+
+O registro deve:
+
+→ ser descartado
+→ NÃO gerar chave_normalizada
+→ ser tratado como erro de normalização
+
+---
+
 # 8. 📥 Regra de Importação da Base (CRÍTICA)
 
 ---
@@ -171,9 +187,36 @@ Incremental acumulativo
 * chave não existe → INSERIR
 * chave existe:
 
-  * comparar dados
-  * se diferente → ATUALIZAR
-  * se igual → IGNORAR
+  * comparar os dados normalizados relevantes
+  * se houver qualquer diferença → ATUALIZAR
+  * se NÃO houver diferença → IGNORAR
+
+---
+
+## Comentário do ajuste 3 — Campos relevantes para comparação
+
+Campos relevantes para comparação:
+
+* contrato_vinculado
+* nota_fiscal
+* placa_normalizada
+
+Campos analíticos (peso, data, clifor, etc):
+* NÃO devem disparar atualização
+* são apenas informativos
+
+---
+
+## Comentário do ajuste 1 — Base de comparação obrigatória (Base)
+
+A comparação deve ser feita EXCLUSIVAMENTE com base nos dados já normalizados.
+
+É proibido utilizar:
+* dados_originais completos
+* valores brutos do Excel
+* strings sem normalização
+
+A comparação deve considerar apenas os campos estruturais já normalizados.
 
 ---
 
@@ -205,7 +248,24 @@ Importação NÃO apaga dados anteriores.
 * chave existe:
 
   * não existe → INSERIR
-  * existe → ATUALIZAR
+  * existe:
+
+    * comparar os dados normalizados relevantes
+    * se houver qualquer diferença → ATUALIZAR
+    * se NÃO houver diferença → IGNORAR
+
+---
+
+## Comentário do ajuste 1 — Base de comparação obrigatória (Complementar)
+
+A comparação deve ser feita EXCLUSIVAMENTE com base nos dados já normalizados.
+
+É proibido utilizar:
+* dados_originais completos
+* valores brutos do Excel
+* strings sem normalização
+
+A comparação deve considerar apenas os campos estruturais já normalizados.
 
 ---
 
@@ -226,6 +286,23 @@ Após importação:
 
 ---
 
+## Comentário do ajuste final 1 — Ordem obrigatória de processamento
+
+Ordem obrigatória de processamento:
+
+1. Executar matching principal utilizando:
+   contrato_vinculado + nota_fiscal
+
+2. Apenas se NÃO houver match:
+   executar diagnóstico secundário (nota + placa)
+
+Regras:
+
+* É proibido executar diagnóstico secundário antes do matching principal
+* É proibido misturar critérios de matching com diagnóstico
+
+---
+
 # 11. 🔎 Diagnóstico Secundário
 
 Quando não houver match por chave principal:
@@ -233,6 +310,24 @@ Quando não houver match por chave principal:
 ```
 Nota + Placa
 ```
+
+---
+
+## Comentário do ajuste 1 — Condição obrigatória para diagnóstico secundário
+
+O diagnóstico secundário (Nota + Placa) só deve ser executado quando:
+
+* a nota fiscal for válida
+* a placa for válida
+
+Considera-se placa válida quando:
+* não é nula
+* não é vazia
+* após normalização possui pelo menos 1 caractere
+
+Caso a placa seja inválida ou ausente:
+→ NÃO executar diagnóstico secundário
+→ manter status como "Aguardando"
 
 ---
 
@@ -261,6 +356,20 @@ Placa NÃO faz parte da chave.
 
 ---
 
+## Comentário do ajuste final 2 — Reprocessamento após alteração
+
+Se um registro já vinculado sofrer alteração em dados relevantes:
+
+→ o registro deve ser reprocessado automaticamente
+→ o status deve ser recalculado
+
+Regras:
+
+* o sistema NÃO deve manter status antigo após alteração
+* o status deve sempre refletir o estado atual dos dados
+
+---
+
 ## Regra de performance
 
 * reprocessar apenas chaves afetadas
@@ -278,6 +387,55 @@ Bloquear importação quando:
 
 ---
 
+## Comentário do ajuste 8 — Regra de erro na normalização
+
+Se não for possível normalizar:
+
+* contrato_vinculado
+ou
+* nota_fiscal
+
+O registro deve:
+→ ser ignorado
+→ ser contabilizado como erro
+→ NÃO ser persistido
+
+---
+
+## Comentário do ajuste 2 — Separação de tipos de não processamento
+
+Tipos de não processamento:
+
+* ignorado_sem_base:
+  quando a chave não existe na Base
+
+* ignorado_sem_alteracao:
+  quando o registro já existe e não houve mudança
+
+* erro_normalizacao:
+  quando não foi possível normalizar contrato ou nota
+
+Esses tipos devem ser tratados separadamente no processamento,
+mesmo que a interface exiba apenas como "ignorados".
+
+---
+
+## Comentário do ajuste 6 — Definição de registro válido
+
+Um registro é considerado válido quando:
+
+* possui contrato_vinculado válido
+* possui nota_fiscal válida
+* foi normalizado com sucesso
+* possui chave_normalizada válida
+
+Caso qualquer condição falhe:
+
+→ o registro NÃO deve ser persistido
+→ o registro NÃO participa do sistema
+
+---
+
 # 14. 📊 Resultado da Importação
 
 Exibir:
@@ -290,6 +448,18 @@ Exibir:
 * aguardando
 * divergentes
 * ambíguos
+
+---
+
+## Comentário do ajuste 7 — Tratamento de registros ignorados
+
+Registros ignorados devem ser:
+
+* contabilizados no resumo da importação
+* exibidos ao usuário
+
+Opcional:
+* permitir exportação dos registros ignorados para auditoria
 
 ---
 
@@ -320,6 +490,17 @@ O sistema NÃO deve:
 * excluir automaticamente
 * inferir dados
 * depender da ordem de importação
+
+---
+
+## Comentário do ajuste 4 — Idempotência da importação
+
+A importação é idempotente.
+
+Importar o mesmo arquivo múltiplas vezes NÃO deve:
+* gerar novos registros
+* atualizar registros existentes
+* alterar o estado da conferência
 
 ---
 

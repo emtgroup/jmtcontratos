@@ -233,6 +233,38 @@ Materializar o resultado da análise (evitar recalcular toda hora)
 
 ---
 
+## Comentário do ajuste 3 — Regra definitiva de origem
+
+Origem representa o layout complementar responsável pelo vínculo.
+
+Regras obrigatórias:
+
+* Se houver exatamente 1 correspondência válida:
+  → origem deve ser o nome do layout
+
+* Se houver múltiplas correspondências:
+  → status deve ser "Ambíguo"
+  → origem deve ser NULL (nunca parcialmente preenchida)
+
+* É proibido preencher origem em cenários ambíguos
+
+---
+
+## Comentário do ajuste final 3 — Múltiplos layouts complementares válidos
+
+Se múltiplos layouts complementares retornarem correspondência válida para a mesma chave:
+
+→ o registro deve ser classificado como "Ambíguo"
+→ a origem deve ser NULL
+
+Regras:
+
+* o sistema NÃO deve escolher automaticamente entre layouts
+* o sistema NÃO deve priorizar layouts
+* a decisão deve ser sempre explícita para o usuário
+
+---
+
 # 12. 🔑 Regra de Chave (GLOBAL)
 
 ```txt
