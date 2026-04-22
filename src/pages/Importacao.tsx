@@ -259,6 +259,7 @@ export default function Importacao() {
   ];
 
   const semLayoutsComplementares = !carregandoLayouts && layoutsComplementares.length === 0;
+  const layoutComplementarSelecionado = layoutsComplementares.find((l) => l.id === layoutComplementarId);
 
   return (
     <div>
@@ -460,11 +461,16 @@ export default function Importacao() {
                 <SelectContent>
                   {layoutsComplementares.map((l) => (
                     <SelectItem key={l.id} value={l.id}>
-                      {l.nome}
+                      {l.nome_exibicao}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {layoutComplementarSelecionado && (
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  Layout selecionado: <span className="font-mono">{layoutComplementarSelecionado.id}</span>
+                </p>
+              )}
               {semLayoutsComplementares && (
                 <p className="text-xs text-muted-foreground mt-1.5">
                   Cadastre um layout em{" "}

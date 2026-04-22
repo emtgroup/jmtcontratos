@@ -33,6 +33,7 @@ interface LayoutResolvido {
   nomeLayout: string;
   linhaCabecalho: number;
   linhaDados: number;
+  deduplicacaoPorNome?: boolean;
   colunas: Array<{
     tipoNormalizado: string;
     nomeExcel: string;
@@ -97,26 +98,44 @@ async function carregarLayoutAtivo(): Promise<LayoutResolvido> {
 function resolverIndices(layout: LayoutResolvido, headerRow: unknown[]): LayoutComIndices {
   const headersNorm = headerRow.map(h => normalizaHeader(String(h ?? "")));
   const indicePorTipo = new Map<string, number>();
+  const faltantes: Array<{ tipo: string; nome: string }> = [];
+  const esperadas: string[] = [];
 
   for (const col of layout.colunas) {
     const nomeNorm = normalizaHeader(col.nomeExcel);
+    esperadas.push(col.nomeExcel);
 
     // Tentar encontrar pelo nome do cabeçalho
     let idx = headersNorm.indexOf(nomeNorm);
 
-    // Fallback: se parece letra Excel (A, B, AA...) e não achou como header, usar como letra
-    if (idx === -1 && /^[A-Z]+$/.test(col.nomeExcel.trim().toUpperCase())) {
+    // Fallback restrito: só aceita padrões curtos de coluna Excel (A..ZZZ).
+    // Evita interpretar cabeçalhos textuais (ex.: "NOTA", "CONTRATO") como letra de coluna.
+    if (idx === -1 && /^[A-Z]{1,3}$/.test(col.nomeExcel.trim().toUpperCase())) {
       idx = letraParaIndice(col.nomeExcel);
     }
 
     if (idx === -1) {
-      const disponiveis = headersNorm.filter(h => h.length > 0).join(", ");
-      throw new Error(
-        `Coluna "${col.nomeExcel}" (${col.tipoNormalizado}) não encontrada no cabeçalho da linha ${layout.linhaCabecalho} do layout ${layout.origemLayout} "${layout.nomeLayout}". Cabeçalhos disponíveis: [${disponiveis}]`
-      );
+      faltantes.push({ tipo: col.tipoNormalizado, nome: col.nomeExcel });
+      continue;
     }
 
     indicePorTipo.set(col.tipoNormalizado, idx);
+  }
+
+  if (faltantes.length > 0) {
+    const headersEncontrados = headersNorm.filter(h => h.length > 0);
+    const faltantesTxt = faltantes.map(f => `${f.nome} (${f.tipo})`).join(", ");
+    const expectedTxt = esperadas.join(", ");
+    const foundTxt = headersEncontrados.join(", ");
+    const infoDeduplicacao = layout.origemLayout === "complementar"
+      ? `deduplicacao_por_nome=${layout.deduplicacaoPorNome ? "sim" : "nao"}`
+      : "deduplicacao_por_nome=n/a";
+
+    throw new Error(
+      `Erro estrutural no layout ${layout.origemLayout}. ` +
+      `layout_id=${layout.layoutId}; nome_layout="${layout.nomeLayout}"; linha_cabecalho=${layout.linhaCabecalho}; ` +
+      `colunas_esperadas=[${expectedTxt}]; colunas_encontradas=[${foundTxt}]; colunas_ausentes=[${faltantesTxt}]; ${infoDeduplicacao}.`
+    );
   }
 
   return { ...layout, indicePorTipo };
@@ -267,6 +286,8 @@ export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPrepara
 export interface LayoutComplementarResumo {
   id: string;
   nome: string;
+  nome_exibicao: string;
+  created_at: string;
 }
 
 export async function listarLayoutsComplementaresAtivos(): Promise<LayoutComplementarResumo[]> {
@@ -277,16 +298,14 @@ export async function listarLayoutsComplementaresAtivos(): Promise<LayoutComplem
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(`Erro ao listar layouts complementares: ${error.message}`);
-  // Evita seleção ambígua na importação quando existir mais de um layout ativo com o mesmo nome.
-  // Mantemos o mais recente por nome para garantir que a importação use a configuração mais atual.
-  const maisRecentePorNome = new Map<string, LayoutComplementarResumo>();
-  for (const l of data || []) {
-    if (!maisRecentePorNome.has(l.nome)) {
-      maisRecentePorNome.set(l.nome, { id: l.id, nome: l.nome });
-    }
-  }
-
-  return [...maisRecentePorNome.values()].sort((a, b) => a.nome.localeCompare(b.nome));
+  // Não deduplicamos por nome para evitar seleção silenciosa de versões diferentes do mesmo layout.
+  // A UI exibe nome + id curto para tornar explícito o layout efetivo usado na importação.
+  return (data || []).map((l) => ({
+    id: l.id,
+    nome: l.nome,
+    created_at: l.created_at,
+    nome_exibicao: `${l.nome} — ${l.id.slice(0, 8)}`,
+  }));
 }
 
 async function carregarLayoutComplementarAtivo(layoutId: string): Promise<LayoutResolvido> {
@@ -338,6 +357,7 @@ async function carregarLayoutComplementarAtivo(layoutId: string): Promise<Layout
     nomeLayout: layout.nome,
     linhaCabecalho: layout.linha_cabecalho,
     linhaDados: layout.linha_dados,
+    deduplicacaoPorNome: false,
     colunas: colunasNorm,
   };
 }
