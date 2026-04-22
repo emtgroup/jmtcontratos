@@ -18,6 +18,8 @@ export interface LinhaParseada {
   contrato_vinculado: string;
   nota_fiscal: string;
   placa?: string;
+  /** Data operacional da nota quando mapeada no layout (campo informativo). */
+  data?: string;
   dados_originais: Record<string, unknown>;
 }
 

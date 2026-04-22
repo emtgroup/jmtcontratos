@@ -5,6 +5,7 @@ import type { LinhaParseada, ResumoImportacao, ProgressoImportacaoBase } from "@
 // Tipos lógicos obrigatórios do layout base (regra do PRD)
 const TIPOS_OBRIGATORIOS = ["contrato_vinculado", "nota_fiscal"] as const;
 const TIPO_PLACA = "placa";
+const TIPOS_DATA_NOTA = ["data_da_nota", "data"] as const;
 
 // Normaliza tipo_coluna: "Contrato vinculado" → "contrato_vinculado"
 function normalizaTipo(s: string): string {
@@ -162,6 +163,9 @@ export async function parseExcelFile(file: File, layout: LayoutResolvido): Promi
   const contratoIdx = resolved.indicePorTipo.get("contrato_vinculado")!;
   const notaIdx = resolved.indicePorTipo.get("nota_fiscal")!;
   const placaIdx = resolved.indicePorTipo.get(TIPO_PLACA);
+  const dataIdx = TIPOS_DATA_NOTA
+    .map((tipo) => resolved.indicePorTipo.get(tipo))
+    .find((idx) => idx !== undefined);
 
   const linhas: LinhaParseada[] = [];
   for (const row of dataRows) {
@@ -181,6 +185,8 @@ export async function parseExcelFile(file: File, layout: LayoutResolvido): Promi
       contrato_vinculado: contrato,
       nota_fiscal: nota,
       placa: placaIdx !== undefined ? String(row[placaIdx] ?? "").trim() || undefined : undefined,
+      // Campo informativo opcional; não participa de matching/diagnóstico.
+      data: dataIdx !== undefined ? String(row[dataIdx] ?? "").trim() || undefined : undefined,
       dados_originais,
     });
   }
