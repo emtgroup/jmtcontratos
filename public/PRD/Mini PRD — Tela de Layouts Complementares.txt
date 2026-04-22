@@ -1,336 +1,67 @@
-
-````markdown
-# 📘 Mini PRD — Tela de Layouts Complementares (V2)
-
----
-
-# 1. 🎯 Objetivo da Tela
-
-Permitir que o usuário configure como os relatórios complementares devem ser interpretados pelo sistema.
-
-Essa configuração define:
-
-- quais colunas existem no arquivo
-- qual o tipo de cada coluna
-- como os dados serão utilizados na conferência
-
----
-
-# 2. 🧠 Conceito Central
-
-O relatório complementar NÃO possui padrão fixo.
-
-O usuário informa:
-
-> “o que cada coluna representa”
-
-E o sistema aplica regras fixas sobre isso.
-
----
-
-# 3. ⚠️ Regra Fundamental
-
-```txt
-O Layout Complementar NÃO define lógica.
-
-Ele apenas mapeia colunas para tipos.
-
-Toda a lógica vem do sistema (PRD principal).
-````
-
----
-
-# 4. 🔑 Regra de Chave (OBRIGATÓRIA E GLOBAL)
-
-A chave do sistema é:
-
-```txt
-CHAVE = contrato_vinculado + nota_fiscal
-```
-
----
-
-## Regras críticas
-
-* a chave é IDENTICA à da Base
-* NÃO existe chave alternativa
-* NÃO existe fallback de chave
-* NÃO existe variação por layout
-
----
-
-## Regra absoluta
-
-```txt
-O Layout Complementar NÃO define a chave.
-
-Ele apenas informa quais colunas representam contrato e nota.
-```
-
----
-
-# 5. 📊 Estrutura da Tela
-
-Lista de layouts:
-
-```
-
-+----------------------+----------------------+
-| Nome do Layout       | Ações                |
-+----------------------+----------------------+
-| Inpasa               | Editar | Excluir     |
-| FS                   | Editar | Excluir     |
-| Cargill              | Editar | Excluir     |
-+----------------------+----------------------+
-
-```
-
-Botão:
-
-[ + Novo Layout Complementar ]
-
----
-
-# 6. 🧩 Cadastro do Layout
-
-```
-
-+----------------------+----------------------+----------------------+
-| Coluna do Excel      | Apelido              | Tipo da Coluna       |
-+----------------------+----------------------+----------------------+
-| NR_CONTR             | Contrato             | [▼ Selecionar]       |
-| NUM_NF               | Nota                 | [▼ Selecionar]       |
-| PLACA                | Placa                | [▼ Selecionar]       |
-| PESO_LIQ             | Peso Líquido         | [▼ Selecionar]       |
-
-```
-
----
-
-# 7. 🧩 Campos da Configuração
-
----
-
-## 7.1 Nome da Coluna (Excel)
-
-* obrigatório
-* deve ser exatamente igual ao arquivo
-* utilizado na leitura
-
----
-
-## 7.2 Apelido
-
-* opcional
-* apenas visual
-* não interfere na lógica
-
----
-
-## 7.3 Tipo da Coluna (CRÍTICO)
-
-Campo obrigatório
-
----
-
-### Tipos disponíveis
-
-#### Estruturais (obrigatórios)
-
-* Contrato vinculado
-* Nota fiscal
-
----
-
-#### Analíticos (opcionais)
-
-* Placa
-* Peso líquido
-* Data
-* Clifor
-* Outros
-
----
-
-## Regra crítica
-
-```txt
-O tipo define o comportamento do sistema.
-
-O nome da coluna NÃO define lógica.
-```
-
----
-
-# 8. 🧼 Regra de Normalização
-
-A normalização NÃO é responsabilidade do layout.
-
----
-
-## Regras
-
-* contrato → números
-* nota → números
-* placa → maiúsculo, sem espaços e sem hífen
-
----
-
-## Regra crítica
-
-```txt
-O layout NÃO executa normalização.
-
-A normalização é feita pelo sistema.
-```
-
----
-
-# 9. 🔗 Regra de Vínculo
-
-O vínculo ocorre somente quando:
-
-* a chave do complementar existe na Base
-
----
-
-## Resultado
-
-* encontrado → Vinculado
-* não encontrado → ignorado (não entra na conferência)
-
----
-
-# 10. ⚖️ Regra dos Dados Analíticos
-
-Campos como:
-
-* peso
-* data
-* clifor
-
----
-
-## Comportamento
-
-* NÃO participam do vínculo
-* NÃO participam da chave
-* NÃO alteram status
-* apenas informativos
-
----
-
-# 11. ⚠️ Regra da Placa (CRÍTICA)
-
-A placa:
-
-* NÃO participa da chave
-* NÃO influencia vínculo
-* NÃO altera resultado principal
-
----
-
-## Uso
-
-A placa é utilizada apenas para:
-
-```txt
-Diagnóstico secundário (Nota + Placa)
-```
-
----
-
-## Comentário do ajuste 1 — Condição obrigatória do diagnóstico secundário
-
-O diagnóstico secundário (Nota + Placa) só deve ser executado quando:
-
-* a nota fiscal for válida
-* a placa for válida
-
-Considera-se placa válida quando:
-* não é nula
-* não é vazia
-* após normalização possui pelo menos 1 caractere
-
-Caso a placa seja inválida ou ausente:
-→ NÃO executar diagnóstico secundário
-→ manter status como "Aguardando"
-
----
-
-# 12. 🚨 Validações Obrigatórias
-
-O sistema deve impedir salvar o layout se:
-
-* não existir tipo "Contrato vinculado"
-* não existir tipo "Nota fiscal"
-* existir mais de uma coluna para esses tipos
-* nome de coluna vazio
-* nome de coluna duplicado
-
----
-
-# 13. 🔄 Uso no Sistema
-
-O layout será utilizado para:
-
-* leitura do Excel
-* identificação de dados
-* geração da chave
-* tentativa de vínculo com a Base
-* suporte ao diagnóstico secundário
-
----
-
-# 14. 🚫 Proibições
-
-O sistema NÃO deve:
-
-* criar chave diferente da Base
-* inferir dados
-* usar nome de coluna como regra
-* alterar dados da Base
-* gerar vínculo sem chave válida
-
----
-
-# 15. 🚫 Regra de Versionamento
-
----
-
-## Regra
-
-* não existe versionamento
-* não existe histórico de layout
-* não existe múltiplas versões
-
----
-
-## Comportamento
-
-* sempre existe apenas uma configuração válida
-* alterações substituem configuração anterior
-
----
-
-# 16. 🧠 Filosofia
-
-```txt
-Base define a verdade.
-
-Complementar apenas tenta alcançá-la.
-```
-
----
-
-# 17. 🎯 Resultado Esperado
-
-* layout simples
-* sem erro de interpretação
-* chave consistente com a Base
-* vínculo correto
-* diagnóstico confiável
-
-```
-
----
+# 📘 Mini PRD — Tela de Layouts Complementares
+
+## Objetivo
+Permitir mapear colunas de cada relatório complementar para tipos do sistema, mantendo compatibilidade com a Base.
+
+## Conceito central
+Cada layout complementar adapta o arquivo de origem ao modelo do sistema; a lógica de vínculo continua centralizada no PRD principal.
+O algoritmo detalhado de matching/diagnóstico que usa esses layouts está no `PRD — Motor de Matching e Diagnóstico.md`.
+
+## Regras obrigatórias
+
+### 1) Chave idêntica à Base
+- `CHAVE = contrato_vinculado + nota_fiscal`
+- Não existe chave alternativa por layout.
+
+### 2) Tipagem obrigatória
+- Tipos estruturais obrigatórios e únicos por layout:
+  - Contrato vinculado
+  - Nota fiscal
+- Tipos analíticos opcionais: placa, peso líquido, data, clifor, outros.
+
+### 3) Validações de salvamento
+Bloquear salvamento se:
+- faltar contrato vinculado;
+- faltar nota fiscal;
+- houver duplicidade dos tipos estruturais;
+- nome de coluna vazio;
+- nome de coluna duplicado.
+
+### 4) Regra de vínculo
+- Complementar só vincula se a chave existir na Base.
+- Sem chave na Base: registro ignorado para conferência e não persistido operacionalmente em `registros_complementares` (apenas contabilizado como `ignorado_sem_base` no resumo/log).
+
+### 5) Regra da placa
+- Placa não participa da chave.
+- Placa não define vínculo principal.
+- Uso exclusivo para diagnóstico secundário (`nota + placa`) quando elegível.
+
+### 6) Regra dos dados analíticos
+- Peso, data, clifor etc. são informativos.
+- Não alteram status por si só.
+
+### 7) Versionamento
+- Não há versionamento de layout.
+- Configuração ativa substitui a anterior.
+
+## Fluxo
+1. Usuário cria/edita layout complementar.
+2. Sistema valida mapeamento mínimo.
+3. Layout é habilitado para importação complementar.
+4. Importações usam layout para normalizar e consolidar por chave.
+
+## Edge cases
+- Layout complementar válido, mas sem coluna de placa: vínculo principal continua possível; diagnóstico secundário pode ficar indisponível.
+- Mesmo registro presente em múltiplos layouts para a mesma chave: status final deve ser `ambiguo`, com `origem = NULL`, sem priorização automática e sem layout preferido.
+- Arquivo com cabeçalho divergente do layout: erro explícito de estrutura.
+
+## Proibições
+- Alterar lógica de chave no layout.
+- Criar vínculo sem chave válida.
+- Alterar dados da Base a partir do complementar.
+- Inferir mapeamento automático sem regra explícita.
+
+## Resultado esperado
+- Layouts complementares consistentes entre si e com a Base.
+- Importação complementar previsível e rastreável.
+- Suporte correto ao matching e ao diagnóstico secundário.

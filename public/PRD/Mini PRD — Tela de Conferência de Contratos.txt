@@ -1,437 +1,57 @@
-
 # 📘 Mini PRD — Tela de Conferência de Contratos
 
----
+## Objetivo
+Exibir o resultado oficial da conferência entre Base e Complementar, sem executar regra de negócio na interface.
 
-# 1. 🎯 Objetivo da Tela
+## Conceito central
+A tela não calcula. A tela lê a tabela `conferencia` e apresenta onde investigar.
+A lógica detalhada de decisão exibida na tela está definida no `PRD — Motor de Matching e Diagnóstico.md`.
 
-Apresentar de forma clara e objetiva o resultado da conferência entre:
+## Regras obrigatórias
 
-- Base (GRL053)
-- Relatórios Complementares
+### 1) Fonte única da tela
+- Consumir exclusivamente a tabela `conferencia`.
+- Nenhuma lógica de matching/diagnóstico no frontend.
 
-Permitindo que o usuário identifique rapidamente:
-
-- registros vinculados
-- registros aguardando vínculo
-- possíveis divergências operacionais
-
----
-
-# 2. 🧠 Conceito Central
-
-A tela NÃO realiza processamento.
-
-Ela apenas exibe o resultado do sistema:
-
-> Base + Complementar → Status
-
----
-
-# 3. 📊 Estrutura da Tela
-
-Tabela principal:
-
-```
-
-+------------+------------+------------------+------------------+---------------------------+-------------+
-| Contrato   | Nota       | Peso Base        | Peso Complementar| Status                    | Origem      |
-+------------+------------+------------------+------------------+---------------------------+-------------+
-| 33044      | 12345      | 10.000           | 9.850            | ✅ Vinculado              | Inpasa      |
-| 33314      | 12346      | 8.500            | -                | ⏳ Aguardando             | -           |
-| 987        | 123        | 12.000           | 11.900           | ⚠️ Contrato Divergente    | Inpasa      |
-+------------+------------+------------------+------------------+---------------------------+-------------+
-
-```
-
----
-
-# 4. 🧩 Colunas da Tela
-
----
-
-## 4.1 Contrato
-
-- valor normalizado
-- vindo da Base
-
----
-
-## 4.2 Nota Fiscal
-
-- valor normalizado
-- vindo da Base
-
----
-
-## 4.3 Peso Base
-
-- valor da Base (peso fiscal)
-- apenas informativo
-
----
-
-## 4.4 Peso Complementar
-
-- valor do complementar (peso líquido)
-- apenas informativo
-- pode estar vazio
-
----
-
-## 4.5 Status
-
-Valores possíveis:
-
+### 2) Status suportados
 - ✅ Vinculado
 - ⏳ Aguardando
 - ⚠️ Contrato Divergente
 - ⚠️ Ambíguo
 
----
-
-## 4.6 Origem
-
-- nome do layout complementar que realizou o vínculo
-- exemplo:
-  - Inpasa
-  - FS
-  - Cargill
-
----
-
-## Comentário do ajuste 3 — Regra definitiva de origem
-
-Origem representa o layout complementar responsável pelo vínculo.
-
-Regras obrigatórias:
-
-* Se houver exatamente 1 correspondência válida:
-  → origem deve ser o nome do layout
-
-* Se houver múltiplas correspondências:
-  → status deve ser "Ambíguo"
-  → origem deve ser NULL (nunca parcialmente preenchida)
-
-* É proibido preencher origem em cenários ambíguos
-
----
-
-## Comentário do ajuste final 3 — Múltiplos layouts complementares válidos
-
-Se múltiplos layouts complementares retornarem correspondência válida para a mesma chave:
-
-→ o registro deve ser classificado como "Ambíguo"
-→ a origem deve ser NULL
-
-Regras:
-
-* o sistema NÃO deve escolher automaticamente entre layouts
-* o sistema NÃO deve priorizar layouts
-* a decisão deve ser sempre explícita para o usuário
-
----
-
-# 5. 🔑 Regra do Status
-
----
-
-## 5.1 Vinculado
-
-Quando:
-
-- existe registro na Base
-- existe registro correspondente no Complementar
-- chave coincide (Contrato + Nota)
-
----
-
-## 5.2 Aguardando
-
-Quando:
-
-- existe na Base
-- NÃO existe no Complementar
-- nenhum candidato encontrado
-
----
-
-## 5.3 ⚠️ Contrato Divergente
-
-Quando:
-
-- NÃO existe match pela chave principal
-- MAS existe registro no complementar com:
-  
-  → mesma NOTA  
-  → mesma PLACA  
-
-- E o contrato vinculado é diferente
-
----
-
-## 5.4 ⚠️ Ambíguo
-
-Quando:
-
-- NÃO existe match pela chave principal
-- E existem múltiplos registros candidatos no complementar com:
-  
-  → mesma NOTA  
-  → mesma PLACA  
-
-- sistema não consegue determinar correspondência única
-
----
-
-# 6. 🔎 Regra de Diagnóstico de Divergência
-
----
-
-## Regra geral
-
-Quando não houver vínculo pela chave principal:
-
-```
-
-CHAVE = contrato_vinculado + nota_fiscal
-
-```
-
-O sistema deve executar análise secundária:
-
-```
-
-DIAGNÓSTICO = nota_fiscal + placa
-
-````
-
----
-
-## Comentário do ajuste 1 — Condição obrigatória do diagnóstico secundário
-
-O diagnóstico secundário (Nota + Placa) só deve ser executado quando:
-
-* a nota fiscal for válida
-* a placa for válida
-
-Considera-se placa válida quando:
-* não é nula
-* não é vazia
-* após normalização possui pelo menos 1 caractere
-
-Caso a placa seja inválida ou ausente:
-→ NÃO executar diagnóstico secundário
-→ manter status como "Aguardando"
-
----
-
-## Comportamento
-
-1. Encontrou 1 registro:
-
-→ comparar contrato  
-→ se diferente → ⚠️ Contrato Divergente  
-
-2. Encontrou mais de 1:
-
-→ ⚠️ Ambíguo  
-
-3. Não encontrou:
-
-→ permanece ⏳ Aguardando  
-
----
-
-## ⚠️ Regra crítica
-
-```txt
-A placa NÃO participa da chave do sistema.
-
-A chave continua sendo exclusivamente:
-Contrato Vinculado + Nota Fiscal
-
-A placa é utilizada apenas como critério auxiliar de diagnóstico.
-````
-
----
-
-# 7. 🔄 Atualização da Tela
-
-A tela deve refletir sempre o estado atual do sistema.
-
----
-
-## Regra:
-
-* após qualquer importação → dados já atualizados
-* não precisa botão de atualizar
-* não precisa botão de reprocessar
-
----
-
-## Comentário do ajuste 6 — Conferência NÃO recalcula
-
-A tela de conferência NÃO executa cálculos.
-
-Ela deve consumir exclusivamente a tabela "conferencia".
-
-Nenhuma lógica de matching ou diagnóstico deve existir no frontend.
-
----
-
-# 8. 🔍 Filtros
-
-A tela deve permitir:
-
-* filtrar por Status:
-
-  * Todos
-  * Vinculados
-  * Aguardando
-  * Contrato Divergente
-  * Ambíguos
-
----
-
-# 9. 📊 Resumo no topo
-
-Exibir indicadores:
-
-```
-
-Total de registros: 150
-Vinculados: 100
-Aguardando: 30
-Divergentes: 15
-Ambíguos: 5
-
-```
-
----
-
-# 10. ⚖️ Regra dos Dados Analíticos
-
-Campos como peso:
-
-* não influenciam o status
-* não são usados para decisão
-* apenas informativos
-
----
-
-# 11. 🚫 Proibições
-
-A tela NÃO deve:
-
-* recalcular dados
-* aplicar lógica de negócio
-* permitir edição de dados
-* alterar vínculo automaticamente com base em diagnóstico
-* tomar decisão sobre divergência
-
----
-
-# 12. 🧠 Filosofia da Tela
-
-```
-
-A tela não decide.
-A tela alerta.
-
-```
-
----
-
-# 13. 🧭 Fluxo do Usuário
-
-```
-
-[Usuário importa dados]
-↓
-[Sistema executa matching]
-↓
-[Sistema executa diagnóstico secundário]
-↓
-[Usuário acessa conferência]
-↓
-[Visualiza resultados]
-↓
-[Investiga divergências]
-
-```
-
----
-
-# 14. 🎯 Resultado Esperado
-
-* visual simples
-* entendimento imediato
-* identificação clara de erro operacional
-* sistema confiável
-* zero ambiguidade de interpretação
-
----
-
-# 🔥 Insight mais importante da tela
-
-👉 Você NÃO está mostrando dados
-👉 Você está mostrando **onde investigar**
-
----
-
-# 💡 Sugestões de melhoria (opcional)
-
----
-
-## 1. 🎨 Status visual
-
-* Verde → Vinculado
-* Amarelo → Aguardando
-* Vermelho → Divergente
-* Laranja → Ambíguo
-
----
-
-## 2. 🔍 Clique na linha (futuro)
-
-Abrir detalhe com:
-
-* dados da base
-* dados do complementar
-* motivo da divergência
-
----
-
-## 3. 📊 Ordenação padrão
-
-* primeiro divergentes
-* depois ambíguos
-* depois aguardando
-* depois vinculados
-
-👉 usuário foca no problema
-
----
-
-# 🧠 Resumo final do sistema
-
-```
-Layout Base
-        ↓
-Layouts Complementares
-        ↓
-Importação
-        ↓
-Normalização (global)
-        ↓
-Chave fixa (Contrato + Nota)
-        ↓
-Matching automático
-        ↓
-Diagnóstico secundário (Nota + Placa)
-        ↓
-Conferência
-```
-
----
+### 3) Regra de origem
+- Origem = layout complementar responsável pelo vínculo quando houver correspondência única.
+- Em ambiguidade, origem obrigatoriamente nula.
+- Em múltiplos layouts válidos para a mesma chave, status obrigatório `ambiguo` e o sistema não prioriza layout.
+
+### 4) Dados analíticos
+- Peso base/complementar e similares são informativos.
+- Não alteram status.
+
+### 5) Atualização da tela
+- Após importação, dados já devem refletir estado atual.
+- Não há botão de reprocessar.
+
+### 6) Filtros mínimos
+- Todos, Vinculados, Aguardando, Divergentes, Ambíguos.
+
+## Fluxo
+1. Usuário importa dados.
+2. Backend processa e atualiza `conferencia`.
+3. Usuário abre tela de conferência.
+4. Tela exibe resultados e filtros.
+
+## Edge cases
+- Registro antes vinculado torna-se divergente/aguardando após atualização relevante: tela deve mostrar novo status.
+- Registro ambíguo: origem deve permanecer vazia.
+- Ausência de complementar: status aguardando.
+
+## Proibições
+- Recalcular conferência no frontend.
+- Editar dados operacionais pela tela.
+- Alterar vínculo automaticamente na interface.
+
+## Resultado esperado
+- Visualização simples e confiável.
+- Diagnóstico operacional claro.
+- Zero ambiguidade sobre onde a decisão é tomada (backend).
