@@ -9,6 +9,7 @@ interface LinhaParseada {
   contrato_vinculado: string;
   nota_fiscal: string;
   placa?: string;
+  data?: string;
   dados_originais: Record<string, unknown>;
 }
 
@@ -33,6 +34,178 @@ function normalizarPlaca(raw: string | undefined): string | null {
 }
 function gerarChave(contrato: string, nota: string): string {
   return `${contrato}::${nota}`;
+}
+
+function placaElegivel(placa: string | null): boolean {
+  return !!placa && placa.trim().length > 0;
+}
+
+async function recalcularConferenciaPorChaves(
+  supabase: ReturnType<typeof createClient>,
+  chavesAfetadas: string[],
+) {
+  if (chavesAfetadas.length === 0) return;
+
+  type BaseRow = {
+    chave_normalizada: string;
+    contrato_vinculado: string;
+    nota_fiscal: string;
+    placa_normalizada: string | null;
+  };
+  type CompRow = {
+    chave_normalizada: string;
+    contrato_vinculado: string;
+    nota_fiscal: string;
+    placa_normalizada: string | null;
+    layout_complementar_id: string;
+  };
+
+  const baseRows: BaseRow[] = [];
+  for (const lote of chunk(chavesAfetadas, 200)) {
+    const { data, error } = await supabase
+      .from("registros_base")
+      .select("chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada")
+      .in("chave_normalizada", lote);
+    if (error) throw new Error(`Erro ao carregar base para conferência: ${error.message}`);
+    baseRows.push(...(data || []));
+  }
+
+  const compsPorChave = new Map<string, CompRow[]>();
+  const idsLayouts = new Set<string>();
+  for (const lote of chunk(chavesAfetadas, 200)) {
+    const { data, error } = await supabase
+      .from("registros_complementares")
+      .select("chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada, layout_complementar_id")
+      .in("chave_normalizada", lote);
+    if (error) throw new Error(`Erro ao carregar complementares por chave: ${error.message}`);
+    for (const row of (data || []) as CompRow[]) {
+      const arr = compsPorChave.get(row.chave_normalizada) || [];
+      arr.push(row);
+      compsPorChave.set(row.chave_normalizada, arr);
+      idsLayouts.add(row.layout_complementar_id);
+    }
+  }
+
+  const paresElegiveis = baseRows
+    .filter((b) => b.nota_fiscal && placaElegivel(b.placa_normalizada))
+    .map((b) => ({ nota: b.nota_fiscal, placa: b.placa_normalizada as string }));
+
+  const candidatosPorPar = new Map<string, CompRow[]>();
+  if (paresElegiveis.length > 0) {
+    const notas = [...new Set(paresElegiveis.map((p) => p.nota))];
+    const placas = [...new Set(paresElegiveis.map((p) => p.placa))];
+    const { data, error } = await supabase
+      .from("registros_complementares")
+      .select("chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada, layout_complementar_id")
+      .in("nota_fiscal", notas)
+      .in("placa_normalizada", placas);
+    if (error) throw new Error(`Erro ao carregar candidatos de diagnóstico: ${error.message}`);
+    for (const row of (data || []) as CompRow[]) {
+      const chavePar = `${row.nota_fiscal}::${row.placa_normalizada || ""}`;
+      const arr = candidatosPorPar.get(chavePar) || [];
+      arr.push(row);
+      candidatosPorPar.set(chavePar, arr);
+      idsLayouts.add(row.layout_complementar_id);
+    }
+  }
+
+  const nomePorLayout = new Map<string, string>();
+  if (idsLayouts.size > 0) {
+    const { data, error } = await supabase
+      .from("layouts_complementares")
+      .select("id, nome")
+      .in("id", [...idsLayouts]);
+    if (error) throw new Error(`Erro ao carregar nomes de layouts: ${error.message}`);
+    for (const row of data || []) nomePorLayout.set(row.id, row.nome);
+  }
+
+  const upserts: Array<{
+    chave_normalizada: string;
+    status: "vinculado" | "aguardando" | "divergente" | "ambiguo";
+    origem: string | null;
+    motivo_status: "vinculo_confirmado" | "sem_complementar" | "sem_diagnostico_elegivel" | "contrato_diferente" | "multiplas_correspondencias";
+  }> = [];
+
+  for (const base of baseRows) {
+    const porChave = compsPorChave.get(base.chave_normalizada) || [];
+    const layoutsDistintos = [...new Set(porChave.map((c) => c.layout_complementar_id))];
+
+    if (layoutsDistintos.length === 1) {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "vinculado",
+        origem: nomePorLayout.get(layoutsDistintos[0]) || null,
+        motivo_status: "vinculo_confirmado",
+      });
+      continue;
+    }
+    if (layoutsDistintos.length > 1) {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "ambiguo",
+        origem: null,
+        motivo_status: "multiplas_correspondencias",
+      });
+      continue;
+    }
+
+    if (!base.nota_fiscal || !placaElegivel(base.placa_normalizada)) {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "aguardando",
+        origem: null,
+        motivo_status: "sem_diagnostico_elegivel",
+      });
+      continue;
+    }
+
+    const chavePar = `${base.nota_fiscal}::${base.placa_normalizada || ""}`;
+    const candidatos = candidatosPorPar.get(chavePar) || [];
+    const candidatosUnicos = [...new Map(candidatos.map((c) => [c.chave_normalizada, c])).values()];
+
+    if (candidatosUnicos.length === 0) {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "aguardando",
+        origem: null,
+        motivo_status: "sem_complementar",
+      });
+      continue;
+    }
+    if (candidatosUnicos.length > 1) {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "ambiguo",
+        origem: null,
+        motivo_status: "multiplas_correspondencias",
+      });
+      continue;
+    }
+
+    const candidato = candidatosUnicos[0];
+    if (candidato.chave_normalizada !== base.chave_normalizada && candidato.contrato_vinculado !== base.contrato_vinculado) {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "divergente",
+        origem: null,
+        motivo_status: "contrato_diferente",
+      });
+    } else {
+      upserts.push({
+        chave_normalizada: base.chave_normalizada,
+        status: "aguardando",
+        origem: null,
+        motivo_status: "sem_complementar",
+      });
+    }
+  }
+
+  for (const lote of chunk(upserts, 500)) {
+    const { error } = await supabase
+      .from("conferencia")
+      .upsert(lote, { onConflict: "chave_normalizada" });
+    if (error) throw new Error(`Erro ao atualizar conferência: ${error.message}`);
+  }
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -252,72 +425,28 @@ Deno.serve(async (req) => {
     }
 
     // ============================================================
-    // RECÁLCULO MULTI-LAYOUT DA CONFERÊNCIA
-    // Para cada chave afetada (que existe na base), contar layouts
-    // distintos com aquela chave em registros_complementares e
-    // decidir status conforme PRD:
-    //   0 → aguardando, origem=null
-    //   1 → vinculado,  origem=nome do layout
-    //  >1 → ambiguo,    origem=null
+    // RECÁLCULO DA CONFERÊNCIA COM MATCH PRINCIPAL + DIAGNÓSTICO
+    // O backend materializa status e motivo_status para leitura direta no frontend.
     // ============================================================
     const chavesAfetadas = chavesValidas; // só recalcula chaves do arquivo atual que existem na base
-
-    const layoutsPorChave = new Map<string, Set<string>>();
-    for (const c of chavesAfetadas) layoutsPorChave.set(c, new Set());
-
-    for (const chunkChaves of chunk(chavesAfetadas, 150)) {
-      const { data: rows, error: recErr } = await supabase
-        .from("registros_complementares")
-        .select("chave_normalizada, layout_complementar_id")
-        .in("chave_normalizada", chunkChaves);
-      if (recErr) throw new Error(`Erro ao recalcular conferência: ${recErr.message}`);
-      for (const r of rows || []) {
-        const set = layoutsPorChave.get(r.chave_normalizada);
-        if (set) set.add(r.layout_complementar_id);
-      }
-    }
-
-    // Coleta IDs únicos de layouts referenciados para resolver nome em 1 query
-    const idsUnicos = new Set<string>();
-    for (const set of layoutsPorChave.values()) {
-      for (const id of set) idsUnicos.add(id);
-    }
-    const nomePorLayoutId = new Map<string, string>();
-    if (idsUnicos.size > 0) {
-      const { data: layoutsNomes, error: nomesErr } = await supabase
-        .from("layouts_complementares")
-        .select("id, nome")
-        .in("id", [...idsUnicos]);
-      if (nomesErr) throw new Error(`Erro ao carregar nomes de layouts: ${nomesErr.message}`);
-      for (const l of layoutsNomes || []) nomePorLayoutId.set(l.id, l.nome);
-    }
+    await recalcularConferenciaPorChaves(supabase, chavesAfetadas);
 
     let vinculados = 0;
     let aguardando = 0;
+    let divergentes = 0;
     let ambiguos = 0;
-    const upsertConferencia: Array<{ chave_normalizada: string; status: string; origem: string | null }> = [];
-
-    for (const [chave, setLayouts] of layoutsPorChave.entries()) {
-      const n = setLayouts.size;
-      if (n === 0) {
-        upsertConferencia.push({ chave_normalizada: chave, status: "aguardando", origem: null });
-        aguardando++;
-      } else if (n === 1) {
-        const [unicoId] = [...setLayouts];
-        const nome = nomePorLayoutId.get(unicoId) || null;
-        upsertConferencia.push({ chave_normalizada: chave, status: "vinculado", origem: nome });
-        vinculados++;
-      } else {
-        upsertConferencia.push({ chave_normalizada: chave, status: "ambiguo", origem: null });
-        ambiguos++;
-      }
-    }
-
-    for (const lote of chunk(upsertConferencia, 500)) {
-      const { error: confErr } = await supabase
+    for (const chunkChaves of chunk(chavesAfetadas, 500)) {
+      const { data: confRows, error: confSelErr } = await supabase
         .from("conferencia")
-        .upsert(lote, { onConflict: "chave_normalizada" });
-      if (confErr) throw new Error(`Erro ao atualizar conferencia: ${confErr.message}`);
+        .select("status")
+        .in("chave_normalizada", chunkChaves);
+      if (confSelErr) throw new Error(`Erro ao ler status da conferencia: ${confSelErr.message}`);
+      for (const row of confRows || []) {
+        if (row.status === "vinculado") vinculados++;
+        else if (row.status === "divergente") divergentes++;
+        else if (row.status === "ambiguo") ambiguos++;
+        else aguardando++;
+      }
     }
 
     // Total de "ignorados" reportado ao usuário inclui ambos os motivos:
@@ -354,7 +483,7 @@ Deno.serve(async (req) => {
       ignorados_sem_base: ignoradosSemBase,
       vinculados,
       aguardando,
-      divergentes: 0,
+      divergentes,
       ambiguos,
       erros,
       primeiro_erro: primeiroErro,
