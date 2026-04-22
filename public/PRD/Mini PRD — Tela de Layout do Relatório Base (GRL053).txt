@@ -1,259 +1,57 @@
+# 📘 Mini PRD — Tela de Layout do Relatório Base (GRL053)
 
-````markdown
-# 📘 Mini PRD — Tela de Layout do Relatório Base (GRL053) (V3 DEFINITIVO)
+## Objetivo
+Permitir mapear colunas do GRL053 para tipos do sistema, viabilizando importação consistente da Base.
 
----
-
-# 1. 🎯 Objetivo da Tela
-
-Permitir que o usuário configure como o sistema deve interpretar o relatório base (GRL053).
-
-Essa configuração define:
-
-- quais colunas existem no Excel
-- qual o tipo de cada coluna
-- como os dados serão transformados em registros operacionais
-
----
-
-# 2. 🧠 Conceito Central
-
-O sistema NÃO interpreta automaticamente o Excel.
-
-O usuário informa:
-
-> “o que cada coluna representa”
-
-E o sistema aplica regras fixas sobre isso.
-
----
-
-# 3. ⚠️ Regra Fundamental
-
-```txt
-O Layout Base NÃO define lógica do sistema.
-
-Ele apenas mapeia colunas para tipos.
-
-Toda a lógica vem do PRD principal.
-````
-
----
-
-# 4. 🔑 Regra de Chave (FIXA E GLOBAL)
-
-```txt
-CHAVE = contrato_vinculado + nota_fiscal
-```
-
----
+## Conceito central
+Layout define significado das colunas; não define regra de negócio.
 
 ## Regras obrigatórias
 
-* NÃO configurável
-* NÃO editável
-* NÃO depende do usuário
-* SEMPRE baseada nos tipos:
+### 1) Chave fixa e global
+- `CHAVE = contrato_vinculado + nota_fiscal`
+- O layout não altera nem redefine essa regra.
 
-  * Contrato vinculado
-  * Nota fiscal
+### 2) Tipagem obrigatória
+- Cada coluna deve receber um tipo.
+- Tipos estruturais obrigatórios e únicos:
+  - Contrato vinculado
+  - Nota fiscal
+- Tipos analíticos opcionais: placa, peso fiscal, data, clifor, outros.
 
----
-
-## Regra crítica
-
-```txt
-O Layout NÃO define a chave.
-
-Ele apenas informa quais colunas representam contrato e nota.
-```
-
----
-
-# 5. 📊 Estrutura da Tela
-
-```text
-+----------------------+----------------------+----------------------+----------------------+
-| Nome da Coluna Excel | Apelido              | Tipo da Coluna       | Participa da Análise |
-+----------------------+----------------------+----------------------+----------------------+
-| CONTR. CLIENTE       | Contrato Vinculado   | [▼ Selecionar]       | [ ]                  |
-| NOTA                 | Nota Fiscal          | [▼ Selecionar]       | [ ]                  |
-| PESO                 | Peso Fiscal          | [▼ Selecionar]       | [ ]                  |
-```
-
----
-
-# 6. 🧩 Campos da Configuração
-
----
-
-## 6.1 Nome da Coluna (Excel)
-
-* obrigatório
-* deve ser exatamente igual ao arquivo
-* utilizado na leitura
-
----
-
-## 6.2 Apelido
-
-* opcional
-* apenas visual
-* não interfere na lógica
-
----
-
-## 6.3 Tipo da Coluna (CRÍTICO)
-
-Campo obrigatório
-
----
-
-### Tipos disponíveis
-
-#### Estruturais (obrigatórios)
-
-* Contrato vinculado
-* Nota fiscal
-
----
-
-#### Analíticos (opcionais)
-
-* Placa
-* Peso fiscal
-* Data
-* Clifor
-* Outros
-
----
-
-## Regra crítica
-
-```txt
-O tipo da coluna define o comportamento do sistema.
-
-O nome da coluna NÃO define lógica.
-```
-
----
-
-## 6.4 Participa da Análise
-
-* opcional
-* apenas para exibição
-* NÃO influencia chave
-* NÃO influencia matching
-
----
-
-# 7. 🧼 Regra de Normalização
-
-A normalização NÃO é responsabilidade do layout.
-
----
-
-## Regras
-
-* contrato → apenas números (primeiro bloco antes do hífen)
-* nota → apenas números
-* placa → maiúsculo, sem espaço, sem hífen
-
----
-
-## Regra crítica
-
-```txt
-O layout NÃO executa normalização.
-
-A normalização é feita pelo sistema.
-```
-
----
-
-# 8. 📥 Transformação em Registro Operacional
-
-Cada linha do Excel será convertida para:
-
-```json
-{
-  "chave_normalizada": "string",
-  "contrato_vinculado": "string",
-  "nota_fiscal": "string",
-  "placa_normalizada": "string | null",
-  "dados_originais": {},
-  "ultima_importacao_id": "uuid",
-  "updated_at": "timestamp"
-}
-```
-
----
-
-## Regra crítica
-
-```txt
-O layout não define o banco.
-
-Ele apenas permite que o sistema construa o registro corretamente.
-```
-
----
-
-# 9. 🚨 Validações Obrigatórias
-
+### 3) Validações de salvamento
 Bloquear salvamento se:
+- faltar tipo contrato vinculado;
+- faltar tipo nota fiscal;
+- houver mais de uma coluna para qualquer tipo estrutural obrigatório;
+- nome de coluna vazio;
+- nome de coluna duplicado.
 
-* não existir tipo "Contrato vinculado"
-* não existir tipo "Nota fiscal"
-* existir mais de um campo para esses tipos
-* nome de coluna vazio
-* nome de coluna duplicado
+### 4) Normalização
+- A tela não normaliza dados.
+- Normalização é executada pelo backend no processamento.
 
----
+### 5) Participação na análise
+- Campo “participa da análise” (quando existir) é apenas informativo/visual.
+- Não altera chave, matching ou diagnóstico.
 
-# 10. 🔄 Uso no Sistema
+## Fluxo
+1. Usuário cadastra/edita layout base.
+2. Usuário mapeia colunas para tipos.
+3. Sistema valida consistência mínima.
+4. Layout fica disponível para importação da Base.
 
-O layout base será utilizado para:
+## Edge cases
+- Coluna de contrato ou nota ausente no arquivo: importação deve falhar por layout incompatível.
+- Dois mapeamentos para nota ou contrato: bloqueio na configuração.
+- Renomeação de cabeçalho no Excel sem atualizar layout: erro explícito na importação.
 
-* leitura do Excel
-* identificação de dados
-* geração da chave
-* persistência incremental
-* execução de matching
-* execução de diagnóstico
+## Proibições
+- Definir chave manualmente.
+- Usar nome de coluna como regra de negócio.
+- Salvar layout estruturalmente inválido.
 
----
-
-# 11. 🚫 Proibições
-
-O sistema NÃO deve:
-
-* permitir definição manual de chave
-* alterar ordem da chave
-* usar nome de coluna como regra
-* ignorar tipo definido
-* salvar layout inválido
-
----
-
-# 12. 🧠 Filosofia
-
-```txt
-O usuário define o significado das colunas.
-
-O sistema define o comportamento.
-```
-
----
-
-# 13. 🎯 Resultado Esperado
-
-* layout simples
-* zero ambiguidade
-* chave consistente
-* base preparada para importação
-* comportamento previsível
-
-```
-
----
+## Resultado esperado
+- Layout claro e sem ambiguidade.
+- Importação base apta a gerar chave global corretamente.
+- Comportamento previsível e auditável.
