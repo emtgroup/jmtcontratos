@@ -113,15 +113,8 @@ function formatarDataHora(valor: string | null): string {
 }
 
 function formatarMotivoStatus(motivoStatus: string | null): string {
-  if (!motivoStatus) return "—";
-  const mapa: Record<string, string> = {
-    vinculo_confirmado: "Vínculo confirmado",
-    sem_complementar: "Sem complementar",
-    sem_diagnostico_elegivel: "Sem diagnóstico elegível",
-    contrato_diferente: "Contrato diferente",
-    multiplas_correspondencias: "Múltiplas correspondências",
-  };
-  return mapa[motivoStatus] ?? motivoStatus;
+  // Regra da tela: exibir exatamente o que vier do backend (sem inferência no frontend).
+  return motivoStatus ?? "—";
 }
 
 export default function Conferencia() {
@@ -465,7 +458,6 @@ export default function Conferencia() {
             <TableHeader>
               <TableRow>
                 <TableHead>Status</TableHead>
-                <TableHead>Motivo do status</TableHead>
                 <TableHead>{labels.contrato_vinculado}</TableHead>
                 <TableHead>{labels.nota_fiscal}</TableHead>
                 <TableHead>{labels.clifor}</TableHead>
@@ -478,7 +470,7 @@ export default function Conferencia() {
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Carregando registros...</span>
                   </TableCell>
                 </TableRow>
@@ -486,7 +478,10 @@ export default function Conferencia() {
               {!loading && records.map((r) => (
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => abrirDrawer(r)}>
                   <TableCell><StatusBadge status={r.status} variant="solid" /></TableCell>
-                  <TableCell>{formatarMotivoStatus(r.motivoStatus)}</TableCell>
+                  {/* FUTURO:
+                      Exibir indicador visual de motivo_status na grid (tooltip ou badge)
+                      somente quando backend passar valores consistentes
+                      NÃO implementar agora */}
                   <TableCell className="font-medium">{r.contratoVinculado}</TableCell>
                   <TableCell>{r.nota}</TableCell>
                   <TableCell>{r.clifor ?? "—"}</TableCell>
@@ -498,7 +493,7 @@ export default function Conferencia() {
               ))}
               {!loading && records.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell>
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -530,7 +525,7 @@ export default function Conferencia() {
               <CardHeader className="py-3"><CardTitle className="text-sm">Dados base</CardTitle></CardHeader>
               <CardContent className="text-sm space-y-1">
                 <p><span className="text-muted-foreground">Status:</span> {selecionada ? <StatusBadge status={selecionada.status} className="ml-2" /> : "—"}</p>
-                <p><span className="text-muted-foreground">Motivo:</span> {selecionada ? formatarMotivoStatus(selecionada.motivoStatus) : "—"}</p>
+                <p><span className="text-muted-foreground">Motivo do status:</span> {selecionada ? formatarMotivoStatus(selecionada.motivoStatus) : "—"}</p>
                 {/* Separação explícita para reduzir ambiguidade operacional entre contrato vinculado e contrato interno. */}
                 <p><span className="text-muted-foreground">{labels.contrato_vinculado}:</span> {selecionada?.contratoVinculado ?? "—"}</p>
                 <p><span className="text-muted-foreground">{labels.contrato_interno}:</span> {selecionada?.contratoInterno ?? "—"}</p>
