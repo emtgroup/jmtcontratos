@@ -112,6 +112,41 @@ function formatarDataHora(valor: string | null): string {
   return data.toLocaleString("pt-BR");
 }
 
+function formatarDataEmissao(valor: string | null): string {
+  if (!valor) return "—";
+
+  const valorNormalizado = valor.trim();
+  if (!valorNormalizado) return "—";
+
+  // Conversão visual de serial Excel (sistema 1900): mantém dado original intacto.
+  const serialExcel = Number(valorNormalizado.replace(",", "."));
+  if (Number.isFinite(serialExcel)) {
+    const serialTruncado = Math.trunc(serialExcel);
+    if (serialTruncado <= 0) return "—";
+
+    const baseExcelUtc = Date.UTC(1899, 11, 30);
+    const dataUtc = new Date(baseExcelUtc + serialTruncado * 24 * 60 * 60 * 1000);
+    if (Number.isNaN(dataUtc.getTime())) return "—";
+
+    return new Intl.DateTimeFormat("pt-BR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(dataUtc);
+  }
+
+  // Fallback visual: se já vier como data textual válida, padroniza para DD/MM/AAAA.
+  const dataTexto = new Date(valorNormalizado);
+  if (Number.isNaN(dataTexto.getTime())) return "—";
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(dataTexto);
+}
+
 function formatarMotivoStatus(motivoStatus: string | null): string {
   // Regra da tela: exibir exatamente o que vier do backend (sem inferência no frontend).
   return motivoStatus ?? "—";
@@ -487,7 +522,7 @@ export default function Conferencia() {
                   <TableCell>{r.clifor ?? "—"}</TableCell>
                   <TableCell>{r.origem ?? "—"}</TableCell>
                   <TableCell>{r.placa ?? "—"}</TableCell>
-                  <TableCell>{r.dataBase ?? "—"}</TableCell>
+                  <TableCell>{formatarDataEmissao(r.dataBase)}</TableCell>
                   <TableCell>{formatarDataHora(r.updatedAt)}</TableCell>
                 </TableRow>
               ))}
@@ -532,7 +567,7 @@ export default function Conferencia() {
                 <p><span className="text-muted-foreground">{labels.nota_fiscal}:</span> {selecionada?.nota ?? "—"}</p>
                 <p><span className="text-muted-foreground">{labels.clifor}:</span> {selecionada?.clifor ?? "—"}</p>
                 <p><span className="text-muted-foreground">{labels.placa}:</span> {selecionada?.placa ?? "—"}</p>
-                <p><span className="text-muted-foreground">{labels.data_da_nota}:</span> {selecionada?.dataBase ?? "—"}</p>
+                <p><span className="text-muted-foreground">{labels.data_da_nota}:</span> {formatarDataEmissao(selecionada?.dataBase ?? null)}</p>
                 {loadingCamposExtrasDrawer && (
                   <p className="text-muted-foreground inline-flex items-center gap-2">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
