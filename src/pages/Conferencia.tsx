@@ -44,6 +44,7 @@ type LinhaConferencia = {
   dataBase: string | null;
   updatedAt: string | null;
 };
+type CampoDrawerBase = { id: string; label: string; valor: string };
 
 type ContagemStatus = Record<StatusType | "todos", number>;
 type LinhaConferenciaRaw = {
@@ -142,6 +143,9 @@ export default function Conferencia() {
   const [drawerAberto, setDrawerAberto] = useState(false);
   const [labels, setLabels] = useState<LabelsConferencia>(labelsPadrao);
   const [avisoLayoutBase, setAvisoLayoutBase] = useState<string | null>(null);
+  const [colunasBaseDrawer, setColunasBaseDrawer] = useState<Array<{ nome_coluna_excel: string; apelido: string; tipo_coluna: string; exibir_no_drawer?: boolean }>>([]);
+  const [camposExtrasDrawer, setCamposExtrasDrawer] = useState<CampoDrawerBase[]>([]);
+  const [loadingCamposExtrasDrawer, setLoadingCamposExtrasDrawer] = useState(false);
 
   const carregarLabelsLayoutBase = async () => {
     try {
@@ -161,13 +165,75 @@ export default function Conferencia() {
       const layout = await fetchLayoutBase();
       if (!layout) {
         setLabels(labelsPadrao);
+        setColunasBaseDrawer([]);
         return;
       }
+      // Hardening: garante fallback booleano explícito para evitar inconsistência em bases legadas.
+      setColunasBaseDrawer(layout.colunas.map((coluna) => ({ ...coluna, exibir_no_drawer: !!coluna.exibir_no_drawer })));
       setLabels(construirLabelsComApelido(layout.colunas));
     } catch (e) {
       console.error("Falha ao carregar apelidos do layout base para conferência", e);
       setLabels(labelsPadrao);
+      setColunasBaseDrawer([]);
       setAvisoLayoutBase("Não foi possível validar os apelidos do layout base. A tela está usando rótulos padrão.");
+    }
+  };
+
+  const carregarCamposExtrasDrawer = async (linha: LinhaConferencia) => {
+    // Extração dinâmica limitada ao drawer: usa apenas configuração do layout base + dados_originais da Base.
+    // Não altera semântica de status/matching, apenas enriquece contexto de leitura.
+    setLoadingCamposExtrasDrawer(true);
+    setCamposExtrasDrawer([]);
+    try {
+      const colunasMarcadas = colunasBaseDrawer.filter((col) => col.exibir_no_drawer);
+      if (colunasMarcadas.length === 0) {
+        setCamposExtrasDrawer([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("registros_base")
+        .select("dados_originais")
+        .eq("chave_normalizada", linha.chave)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw new Error(`Erro ao carregar dados originais da base: ${error.message}`);
+
+      // Hardening: evita quebra caso dados_originais venha em formato inesperado.
+      const dadosBrutos = data?.dados_originais;
+      const dadosOriginais = (dadosBrutos && typeof dadosBrutos === "object" && !Array.isArray(dadosBrutos)
+        ? dadosBrutos
+        : {}) as Record<string, unknown>;
+      const tiposFixosDrawer = new Set([
+        "contrato_vinculado",
+        "contrato_interno",
+        "nota_fiscal",
+        "clifor",
+        "placa",
+        "data_da_nota",
+        "data",
+      ]);
+
+      const extras = colunasMarcadas
+        .filter((coluna) => !tiposFixosDrawer.has(normalizaTipoColuna(coluna.tipo_coluna)))
+        .map((coluna) => {
+          const valor = dadosOriginais[coluna.nome_coluna_excel];
+          // Regra do drawer: campo marcado sempre aparece; quando vazio/ausente, exibe "—".
+          const valorTextoBruto = valor == null ? "" : String(valor).trim();
+          return {
+            id: `${coluna.nome_coluna_excel}-${normalizaTipoColuna(coluna.tipo_coluna)}`,
+            label: coluna.apelido?.trim() || coluna.nome_coluna_excel,
+            valor: valorTextoBruto || "—",
+          };
+        });
+
+      setCamposExtrasDrawer(extras);
+    } catch (e) {
+      console.error("Falha ao carregar campos extras do drawer", e);
+      setCamposExtrasDrawer([]);
+    } finally {
+      setLoadingCamposExtrasDrawer(false);
     }
   };
 
@@ -278,6 +344,7 @@ export default function Conferencia() {
 
   const abrirDrawer = (linha: LinhaConferencia) => {
     setSelecionada(linha);
+    void carregarCamposExtrasDrawer(linha);
     setDrawerAberto(true);
   };
 
@@ -457,6 +524,22 @@ export default function Conferencia() {
                 <p><span className="text-muted-foreground">{labels.clifor}:</span> {selecionada?.clifor ?? "—"}</p>
                 <p><span className="text-muted-foreground">{labels.placa}:</span> {selecionada?.placa ?? "—"}</p>
                 <p><span className="text-muted-foreground">{labels.data_da_nota}:</span> {selecionada?.dataBase ?? "—"}</p>
+                {loadingCamposExtrasDrawer && (
+                  <p className="text-muted-foreground inline-flex items-center gap-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Carregando campos adicionais...
+                  </p>
+                )}
+                {!loadingCamposExtrasDrawer && camposExtrasDrawer.length > 0 && (
+                  <div className="pt-2 border-t mt-2">
+                    <p className="text-muted-foreground text-xs mb-1">Campos adicionais da Base</p>
+                    {camposExtrasDrawer.map((campo) => (
+                      <p key={campo.id}>
+                        <span className="text-muted-foreground">{campo.label}:</span> {campo.valor}
+                      </p>
+                    ))}
+                  </div>
+                )}
                 <p><span className="text-muted-foreground">Chave técnica:</span> <span className="font-mono text-xs">{selecionada?.chave ?? "—"}</span></p>
               </CardContent>
             </Card>

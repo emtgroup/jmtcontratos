@@ -36,6 +36,9 @@ A lógica detalhada de decisão exibida na tela está definida no `PRD — Motor
 - O uso de apelido é exclusivamente visual: não altera chave, matching, persistência nem regras de backend.
 - A data principal exibida na conferência deve ser a data da Base.
 - O drawer deve seguir a mesma semântica visual e explicitar contrato vinculado versus contrato interno.
+- O drawer deve manter um bloco fixo mínimo e pode exibir bloco adicional com campos da Base marcados com `exibir_no_drawer`.
+- Campo adicional marcado sem valor deve ser exibido como `—`.
+- `exibir_no_drawer` é somente visual e não altera grid, matching, status, chave, persistência ou importação.
 
 ### 5) Atualização da tela
 - Após importação, dados já devem refletir estado atual.

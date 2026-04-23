@@ -19,6 +19,7 @@ export interface LayoutBaseColuna {
   apelido: string;
   tipo_coluna: string;
   analise: boolean;
+  exibir_no_drawer?: boolean;
   ordem: number;
   /** Flag local: true se a coluna ainda não foi persistida no banco */
   _isNew?: boolean;
@@ -85,6 +86,7 @@ export async function fetchLayoutBase(): Promise<LayoutBaseCompleto | null> {
       apelido: c.apelido,
       tipo_coluna: c.tipo_coluna,
       analise: c.analise,
+      exibir_no_drawer: c.exibir_no_drawer ?? false,
       ordem: c.ordem,
     })),
   };
@@ -191,6 +193,7 @@ export async function saveLayoutBase(
       apelido: col.apelido,
       tipo_coluna: col.tipo_coluna,
       analise: col.analise,
+      exibir_no_drawer: !!col.exibir_no_drawer,
       ordem: i,
     };
 

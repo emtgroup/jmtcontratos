@@ -141,6 +141,7 @@ export type Database = {
         Row: {
           analise: boolean
           apelido: string
+          exibir_no_drawer: boolean
           id: string
           layout_base_id: string
           nome_coluna_excel: string
@@ -150,6 +151,7 @@ export type Database = {
         Insert: {
           analise?: boolean
           apelido?: string
+          exibir_no_drawer?: boolean
           id?: string
           layout_base_id: string
           nome_coluna_excel: string
@@ -159,6 +161,7 @@ export type Database = {
         Update: {
           analise?: boolean
           apelido?: string
+          exibir_no_drawer?: boolean
           id?: string
           layout_base_id?: string
           nome_coluna_excel?: string
