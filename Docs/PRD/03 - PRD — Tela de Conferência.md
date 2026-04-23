@@ -96,6 +96,9 @@ Conteúdo mínimo do drawer:
 - contexto operacional.
 - O drawer deve usar a mesma semântica visual dos apelidos da Base.
 - Exibir explicitamente, quando disponível: contrato vinculado, contrato interno, nota fiscal, clifor, placa, data da base e chave técnica (secundária).
+- O drawer deve exibir um bloco fixo mínimo + bloco de campos adicionais da Base marcados com `exibir_no_drawer` no layout base.
+- Campos adicionais marcados e sem valor devem aparecer como `—` para manter consistência visual.
+- `exibir_no_drawer` não altera grid principal, matching, status, chave, persistência ou importação.
 
 ## 9. Fronteira com importação
 Não mostrar registros ignorados na grid de conferência.

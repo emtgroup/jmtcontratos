@@ -73,6 +73,7 @@ const columnHelpText = {
   apelido: "Nome interno utilizado pelo sistema para identificar a coluna. Não precisa ser igual ao Excel.",
   tipoColuna: "Define o significado da coluna no sistema: identificação principal (Contrato vinculado/Nota fiscal), apoio (Placa), informativos (Peso fiscal/Peso líquido) e detalhe/exibição (Contrato interno, Data da nota, Hora, Produto, Observação NF, Chave de acesso, Clifor e Nome cooperativa).",
   analise: "Indica participação em análises visuais da conferência. Não define chave, não define matching e não altera regra central do sistema.",
+  exibirNoDrawer: "Define se o campo será exibido no detalhe da conferência (drawer). Não altera grid principal, status, matching ou chave.",
 };
 
 const renderHeaderWithHelp = (title: string, tooltipText: string) => (
@@ -153,6 +154,7 @@ export default function Configuracoes() {
         apelido: "",
         tipo_coluna: "Data da nota",
         analise: false,
+        exibir_no_drawer: false,
         ordem: baseColumns.length,
         _isNew: true,
       },
@@ -453,6 +455,7 @@ export default function Configuracoes() {
                       <TableHead className="w-[28%]">{renderHeaderWithHelp("Apelido", columnHelpText.apelido)}</TableHead>
                       <TableHead>{renderHeaderWithHelp("Tipo da Coluna", columnHelpText.tipoColuna)}</TableHead>
                       <TableHead className="text-center">{renderHeaderWithHelp("Análise", columnHelpText.analise)}</TableHead>
+                      <TableHead className="text-center">{renderHeaderWithHelp("Exibir no drawer", columnHelpText.exibirNoDrawer)}</TableHead>
                       <TableHead className="w-12"></TableHead>
                     </TableRow>
                   </TableHeader>
@@ -484,6 +487,13 @@ export default function Configuracoes() {
                           </TableCell>
                           <TableCell className="text-center">
                             <Checkbox checked={col.analise} onCheckedChange={(checked) => updateBaseColumnField(col.id, "analise", !!checked)} disabled={isSaving} />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={!!col.exibir_no_drawer}
+                              onCheckedChange={(checked) => updateBaseColumnField(col.id, "exibir_no_drawer", !!checked)}
+                              disabled={isSaving}
+                            />
                           </TableCell>
                           <TableCell>
                             <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeBaseColumn(col.id)} disabled={isSaving}>
@@ -691,4 +701,3 @@ export default function Configuracoes() {
     </div>
   );
 }
-
