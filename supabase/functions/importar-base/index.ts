@@ -50,6 +50,16 @@ function placaElegivel(placa: string | null): boolean {
   return !!placa && placa.trim().length > 0;
 }
 
+function stableJsonStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map((item) => stableJsonStringify(item)).join(",")}]`;
+
+  const entries = Object.entries(value as Record<string, unknown>)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, v]) => `${JSON.stringify(k)}:${stableJsonStringify(v)}`);
+  return `{${entries.join(",")}}`;
+}
+
 async function recalcularConferenciaPorChaves(
   supabase: ReturnType<typeof createClient>,
   chavesAfetadas: string[],
@@ -381,13 +391,20 @@ Deno.serve(async (req) => {
 
     // === BATCH SELECT: busca registros existentes pelas chaves ===
     const todasChaves = processadas.map(p => p.chave);
-    const existentesMap = new Map<string, { id: string; contrato_vinculado: string; nota_fiscal: string; placa_normalizada: string | null }>();
+    const existentesMap = new Map<string, {
+      id: string;
+      contrato_vinculado: string;
+      nota_fiscal: string;
+      placa_normalizada: string | null;
+      data_referencia: string | null;
+      dados_originais: Record<string, unknown> | null;
+    }>();
 
     // Chunk pequeno: cada chave ~14 chars vira ~30 chars URL-encoded; 150 keys ≈ 5KB de URL (limite seguro do PostgREST)
     for (const chunkChaves of chunk(todasChaves, 150)) {
       const { data: existentes, error: selErr } = await supabase
         .from("registros_base")
-        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada")
+        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada, data_referencia, dados_originais")
         .in("chave_normalizada", chunkChaves);
       if (selErr) throw new Error(`Erro ao buscar registros existentes: ${selErr.message}`);
       for (const r of existentes || []) existentesMap.set(r.chave_normalizada, r);
@@ -411,20 +428,32 @@ Deno.serve(async (req) => {
           ultima_importacao_id: importacaoId,
         });
       } else {
-        // Regra crítica PRD: update depende SOMENTE dos campos estruturais normalizados.
-        // Não usamos dados_originais para decidir update, preservando idempotência diária.
-        const mudou =
+        // Regra crítica PRD: matching/status dependem somente dos campos estruturais normalizados.
+        // Campos informativos (data/dados_originais) podem ser atualizados sem alterar semântica do matching.
+        const mudouEstrutural =
           existente.contrato_vinculado !== p.contrato ||
           existente.nota_fiscal !== p.nota ||
           (existente.placa_normalizada || null) !== (p.placa || null);
-        if (mudou) {
+        const dadosOriginaisAtuais = (existente.dados_originais && typeof existente.dados_originais === "object")
+          ? existente.dados_originais
+          : {};
+        const mudouContextoInformativo =
+          (existente.data_referencia || null) !== (p.data || null) ||
+          // Comparação determinística para preservar idempotência quando a ordem das chaves do JSON variar.
+          stableJsonStringify(dadosOriginaisAtuais) !== stableJsonStringify(p.dados || {});
+
+        // A data da Base (GRL053) é campo informativo da conferência e precisa refletir a carga atual.
+        // Por isso, atualizamos também quando só contexto informativo mudou, sem mexer no motor de matching.
+        if (mudouEstrutural || mudouContextoInformativo) {
           paraAtualizar.push({
             id: existente.id,
             chave: p.chave,
             payload: {
-              contrato_vinculado: p.contrato,
-              nota_fiscal: p.nota,
-              placa_normalizada: p.placa,
+              ...(mudouEstrutural ? {
+                contrato_vinculado: p.contrato,
+                nota_fiscal: p.nota,
+                placa_normalizada: p.placa,
+              } : {}),
               data_referencia: p.data,
               dados_originais: p.dados,
               ultima_importacao_id: importacaoId,
