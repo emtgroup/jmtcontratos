@@ -16,6 +16,7 @@ interface LinhaParseada {
 interface RequestBody {
   nome_arquivo: string;
   linhas: LinhaParseada[];
+  layout_tem_data_mapeada?: boolean;
 }
 
 type EtapaImportacaoBackend =
@@ -48,6 +49,36 @@ function gerarChave(contrato: string, nota: string): string {
 
 function placaElegivel(placa: string | null): boolean {
   return !!placa && placa.trim().length > 0;
+}
+
+function formatarDataIsoUtc(data: Date): string {
+  const y = data.getUTCFullYear();
+  const m = String(data.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(data.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Sanitização mínima e determinística para data_referencia:
+// - remove espaços
+// - evita string vazia
+// - converte serial Excel simples (numérico inteiro) para YYYY-MM-DD quando seguro
+function sanitizarDataReferencia(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const valor = raw.trim();
+  if (!valor) return null;
+
+  // Excel serial date típico (dias desde 1899-12-30). Mantemos conversão conservadora.
+  // Sem heurística avançada: se sair da faixa operacional, preserva string original.
+  if (/^\d+$/.test(valor)) {
+    const serial = Number(valor);
+    if (Number.isInteger(serial) && serial >= 1 && serial <= 60000) {
+      const baseUtc = Date.UTC(1899, 11, 30);
+      const data = new Date(baseUtc + serial * 86400000);
+      return formatarDataIsoUtc(data);
+    }
+  }
+
+  return valor;
 }
 
 function stableJsonStringify(value: unknown): string {
@@ -289,6 +320,10 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (body.layout_tem_data_mapeada === false) {
+      console.warn("[IMPORTACAO] Layout base sem campo de data mapeado");
+    }
+
     // === LOCK: verifica + libera órfão (>5min) + adquire ===
     await atualizarProgresso({ etapa_atual: "validando_lock", status_processamento: "processando", force: true });
     const { data: lockData, error: lockError } = await supabase
@@ -375,7 +410,7 @@ Deno.serve(async (req) => {
         contrato: contratoNorm,
         nota: notaNorm,
         placa: normalizarPlaca(linha.placa),
-        data: linha.data?.trim() ? linha.data.trim() : null,
+        data: sanitizarDataReferencia(linha.data),
         dados: linha.dados_originais || {},
       });
 
