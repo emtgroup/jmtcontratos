@@ -104,11 +104,26 @@ export async function saveLayoutBase(
 ): Promise<LayoutBaseCompleto> {
   let layoutId = layout.id;
 
+  // Hardening: mantém somente 1 layout base ativo para evitar ambiguidade operacional na conferência.
+  const desativarOutrosLayouts = async (idAtivo?: string) => {
+    let query = supabase
+      .from("layouts_base")
+      .update({ ativo: false });
+
+    if (idAtivo) query = query.neq("id", idAtivo);
+
+    const { error } = await query.eq("ativo", true);
+    if (error) throw new Error(`Erro ao normalizar layout ativo: ${error.message}`);
+  };
+
   if (layoutId) {
+    await desativarOutrosLayouts(layoutId);
+
     // Atualiza layout existente
     const { error } = await supabase
       .from("layouts_base")
       .update({
+        ativo: true,
         linha_cabecalho: layout.linha_cabecalho,
         linha_dados: layout.linha_dados,
       })
@@ -118,6 +133,8 @@ export async function saveLayoutBase(
       throw new Error(`Erro ao atualizar layout base: ${error.message}`);
     }
   } else {
+    await desativarOutrosLayouts();
+
     // Cria novo layout base
     const { data, error } = await supabase
       .from("layouts_base")

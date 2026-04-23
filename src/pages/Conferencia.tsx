@@ -17,6 +17,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "@/components/ui/drawer";
+import { fetchLayoutBase } from "@/services/layoutBaseService";
 
 const statusFilters: (StatusType | "todos")[] = ["todos", "vinculado", "aguardando", "divergente", "ambiguo"];
 const statusFilterLabels: Record<StatusType | "todos", string> = {
@@ -32,17 +33,69 @@ const pageSizeOptions = [25, 50, 100] as const;
 type LinhaConferencia = {
   id: string;
   chave: string;
-  contrato: string;
+  contratoVinculado: string;
+  contratoInterno: string | null;
   nota: string;
+  clifor: string | null;
   status: StatusType;
   motivoStatus: string | null;
   origem: string | null;
   placa: string | null;
-  dataReferencia: string | null;
+  dataBase: string | null;
   updatedAt: string | null;
 };
 
 type ContagemStatus = Record<StatusType | "todos", number>;
+type LinhaConferenciaRaw = {
+  id: string;
+  chave_normalizada: string;
+  contrato_vinculado: string;
+  contrato_interno: string | null;
+  nota_fiscal: string;
+  clifor: string | null;
+  status: string;
+  motivo_status: string | null;
+  origem: string | null;
+  placa: string | null;
+  data_referencia: string | null;
+  updated_at: string | null;
+};
+type TipoColunaLabel = "contrato_vinculado" | "contrato_interno" | "nota_fiscal" | "clifor" | "placa" | "data_da_nota";
+type LabelsConferencia = Record<TipoColunaLabel, string>;
+
+const labelsPadrao: LabelsConferencia = {
+  contrato_vinculado: "Contrato vinculado",
+  contrato_interno: "Contrato interno",
+  nota_fiscal: "Nota fiscal",
+  clifor: "Clifor",
+  placa: "Placa",
+  data_da_nota: "Data da base",
+};
+
+function normalizaTipoColuna(tipoColuna: string): string {
+  return tipoColuna.trim().toLowerCase().replace(/\s+/g, "_");
+}
+
+function construirLabelsComApelido(colunas: Array<{ tipo_coluna: string; apelido: string }>): LabelsConferencia {
+  const aliasesPorTipo = new Map<string, string>();
+  for (const coluna of colunas) {
+    const tipo = normalizaTipoColuna(coluna.tipo_coluna);
+    const apelido = coluna.apelido?.trim();
+    // Hardening UX: evita rótulo fraco (curto, vazio ou só números) para não degradar a leitura operacional.
+    const apelidoValido = Boolean(apelido) && apelido.length >= 3 && !/^\d+$/.test(apelido);
+    if (apelidoValido) aliasesPorTipo.set(tipo, apelido);
+  }
+
+  // Apelido é puramente visual: fallback mantém nomenclatura padrão sem alterar semântica do backend.
+  return {
+    contrato_vinculado: aliasesPorTipo.get("contrato_vinculado") ?? labelsPadrao.contrato_vinculado,
+    contrato_interno: aliasesPorTipo.get("contrato_interno") ?? labelsPadrao.contrato_interno,
+    nota_fiscal: aliasesPorTipo.get("nota_fiscal") ?? labelsPadrao.nota_fiscal,
+    clifor: aliasesPorTipo.get("clifor") ?? labelsPadrao.clifor,
+    placa: aliasesPorTipo.get("placa") ?? labelsPadrao.placa,
+    data_da_nota: aliasesPorTipo.get("data_da_nota") ?? aliasesPorTipo.get("data") ?? labelsPadrao.data_da_nota,
+  };
+}
 
 function validarStatus(status: string, chave: string): StatusType {
   // Status da conferência é materializado no backend; UI não pode inferir nem corrigir semanticamente.
@@ -87,6 +140,36 @@ export default function Conferencia() {
   });
   const [selecionada, setSelecionada] = useState<LinhaConferencia | null>(null);
   const [drawerAberto, setDrawerAberto] = useState(false);
+  const [labels, setLabels] = useState<LabelsConferencia>(labelsPadrao);
+  const [avisoLayoutBase, setAvisoLayoutBase] = useState<string | null>(null);
+
+  const carregarLabelsLayoutBase = async () => {
+    try {
+      const { count: ativos, error: ativosError } = await supabase
+        .from("layouts_base")
+        .select("id", { count: "exact", head: true })
+        .eq("ativo", true);
+      if (ativosError) throw new Error(`Erro ao validar layout base ativo: ${ativosError.message}`);
+
+      if ((ativos ?? 0) > 1) {
+        // Segurança operacional: a tela segue com fallback visual e alerta inconsistência de configuração.
+        setAvisoLayoutBase("Foram encontrados múltiplos layouts base ativos. Revise /configuracoes para manter apenas 1 ativo.");
+      } else {
+        setAvisoLayoutBase(null);
+      }
+
+      const layout = await fetchLayoutBase();
+      if (!layout) {
+        setLabels(labelsPadrao);
+        return;
+      }
+      setLabels(construirLabelsComApelido(layout.colunas));
+    } catch (e) {
+      console.error("Falha ao carregar apelidos do layout base para conferência", e);
+      setLabels(labelsPadrao);
+      setAvisoLayoutBase("Não foi possível validar os apelidos do layout base. A tela está usando rótulos padrão.");
+    }
+  };
 
   const carregarConferencia = async () => {
     setLoading(true);
@@ -101,28 +184,31 @@ export default function Conferencia() {
       // Não existe join no frontend para evitar decisão semântica fora da camada de processamento.
       let query = supabase
         .from("vw_conferencia_tela" as never)
-        .select("id, chave_normalizada, contrato_vinculado, nota_fiscal, status, motivo_status, origem, placa, data_referencia, updated_at", { count: "exact" })
+        .select("id, chave_normalizada, contrato_vinculado, contrato_interno, nota_fiscal, clifor, status, motivo_status, origem, placa, data_referencia, updated_at", { count: "exact" })
         .order("updated_at", { ascending: false })
         .range(inicio, fim);
 
       if (statusSelecionado) query = query.eq("status", statusSelecionado);
       if (search.trim()) {
-        query = query.or(`contrato_vinculado.ilike.%${search.trim()}%,nota_fiscal.ilike.%${search.trim()}%`);
+        query = query.or(`contrato_vinculado.ilike.%${search.trim()}%,nota_fiscal.ilike.%${search.trim()}%,clifor.ilike.%${search.trim()}%`);
       }
 
       const { data, error, count } = await query;
       if (error) throw new Error(`Erro ao carregar conferência: ${error.message}`);
 
-      const linhas: LinhaConferencia[] = (data ?? []).map((row: any) => ({
+      const linhas: LinhaConferencia[] = ((data ?? []) as LinhaConferenciaRaw[]).map((row) => ({
         id: row.id,
         chave: row.chave_normalizada,
-        contrato: row.contrato_vinculado,
+        contratoVinculado: row.contrato_vinculado,
+        contratoInterno: row.contrato_interno ?? null,
         nota: row.nota_fiscal,
+        clifor: row.clifor ?? null,
         status: validarStatus(row.status, row.chave_normalizada),
         motivoStatus: row.motivo_status ?? null,
         origem: row.origem,
         placa: row.placa ?? null,
-        dataReferencia: row.data_referencia ?? null,
+        // Data principal da tela vem da Base (campo materializado no backend), não do complementar.
+        dataBase: row.data_referencia ?? null,
         updatedAt: row.updated_at ?? null,
       }));
 
@@ -145,7 +231,7 @@ export default function Conferencia() {
           .select("id", { count: "exact", head: true });
 
         if (status) cQuery = cQuery.eq("status", status);
-        if (filtrosBusca) cQuery = cQuery.or(`contrato_vinculado.ilike.%${filtrosBusca}%,nota_fiscal.ilike.%${filtrosBusca}%`);
+        if (filtrosBusca) cQuery = cQuery.or(`contrato_vinculado.ilike.%${filtrosBusca}%,nota_fiscal.ilike.%${filtrosBusca}%,clifor.ilike.%${filtrosBusca}%`);
 
         const { count: c, error: e } = await cQuery;
         if (e) throw new Error(`Erro ao contar conferência${status ? ` (${status})` : ""}: ${e.message}`);
@@ -177,6 +263,10 @@ export default function Conferencia() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    void carregarLabelsLayoutBase();
+  }, []);
 
   useEffect(() => {
     void carregarConferencia();
@@ -222,7 +312,7 @@ export default function Conferencia() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar contrato ou nota..."
+            placeholder="Buscar contrato, nota ou clifor..."
             className="pl-9"
             value={search}
             onChange={(e) => {
@@ -275,6 +365,13 @@ export default function Conferencia() {
           </CardContent>
         </Card>
       )}
+      {avisoLayoutBase && (
+        <Card className="mb-4 border-l-4 border-l-[hsl(var(--status-aguardando))]">
+          <CardContent className="py-3 text-xs text-[hsl(var(--status-aguardando))]">
+            {avisoLayoutBase}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="py-3">
@@ -288,18 +385,19 @@ export default function Conferencia() {
               <TableRow>
                 <TableHead>Status</TableHead>
                 <TableHead>Motivo do status</TableHead>
-                <TableHead>Contrato</TableHead>
-                <TableHead>Nota Fiscal</TableHead>
+                <TableHead>{labels.contrato_vinculado}</TableHead>
+                <TableHead>{labels.nota_fiscal}</TableHead>
+                <TableHead>{labels.clifor}</TableHead>
                 <TableHead>Origem</TableHead>
-                <TableHead>Placa</TableHead>
-                <TableHead>Data</TableHead>
+                <TableHead>{labels.placa}</TableHead>
+                <TableHead>{labels.data_da_nota}</TableHead>
                 <TableHead>Atualizado em</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Carregando registros...</span>
                   </TableCell>
                 </TableRow>
@@ -308,17 +406,18 @@ export default function Conferencia() {
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => abrirDrawer(r)}>
                   <TableCell><StatusBadge status={r.status} variant="solid" /></TableCell>
                   <TableCell>{formatarMotivoStatus(r.motivoStatus)}</TableCell>
-                  <TableCell className="font-medium">{r.contrato}</TableCell>
+                  <TableCell className="font-medium">{r.contratoVinculado}</TableCell>
                   <TableCell>{r.nota}</TableCell>
+                  <TableCell>{r.clifor ?? "—"}</TableCell>
                   <TableCell>{r.origem ?? "—"}</TableCell>
                   <TableCell>{r.placa ?? "—"}</TableCell>
-                  <TableCell>{r.dataReferencia ?? "—"}</TableCell>
+                  <TableCell>{r.dataBase ?? "—"}</TableCell>
                   <TableCell>{formatarDataHora(r.updatedAt)}</TableCell>
                 </TableRow>
               ))}
               {!loading && records.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell>
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -351,10 +450,13 @@ export default function Conferencia() {
               <CardContent className="text-sm space-y-1">
                 <p><span className="text-muted-foreground">Status:</span> {selecionada ? <StatusBadge status={selecionada.status} className="ml-2" /> : "—"}</p>
                 <p><span className="text-muted-foreground">Motivo:</span> {selecionada ? formatarMotivoStatus(selecionada.motivoStatus) : "—"}</p>
-                <p><span className="text-muted-foreground">Contrato:</span> {selecionada?.contrato ?? "—"}</p>
-                <p><span className="text-muted-foreground">Nota:</span> {selecionada?.nota ?? "—"}</p>
-                <p><span className="text-muted-foreground">Placa:</span> {selecionada?.placa ?? "—"}</p>
-                <p><span className="text-muted-foreground">Data:</span> {selecionada?.dataReferencia ?? "—"}</p>
+                {/* Separação explícita para reduzir ambiguidade operacional entre contrato vinculado e contrato interno. */}
+                <p><span className="text-muted-foreground">{labels.contrato_vinculado}:</span> {selecionada?.contratoVinculado ?? "—"}</p>
+                <p><span className="text-muted-foreground">{labels.contrato_interno}:</span> {selecionada?.contratoInterno ?? "—"}</p>
+                <p><span className="text-muted-foreground">{labels.nota_fiscal}:</span> {selecionada?.nota ?? "—"}</p>
+                <p><span className="text-muted-foreground">{labels.clifor}:</span> {selecionada?.clifor ?? "—"}</p>
+                <p><span className="text-muted-foreground">{labels.placa}:</span> {selecionada?.placa ?? "—"}</p>
+                <p><span className="text-muted-foreground">{labels.data_da_nota}:</span> {selecionada?.dataBase ?? "—"}</p>
                 <p><span className="text-muted-foreground">Chave técnica:</span> <span className="font-mono text-xs">{selecionada?.chave ?? "—"}</span></p>
               </CardContent>
             </Card>

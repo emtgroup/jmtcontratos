@@ -50,16 +50,29 @@ Proibido:
 Colunas mínimas:
 - Status
 - Motivo do status
-- Contrato
+- Contrato vinculado
 - Nota fiscal
+- Clifor
 - Origem
 - Placa
-- Data
+- Data da base
 - Atualizado em
 
 Regra:
 - chave técnica não deve ser coluna principal da grid.
 - chave técnica pode existir no detalhe da linha.
+- a estrutura da grid é fixa (não é montagem dinâmica por layout).
+
+## 6.1 Nomenclatura visual baseada no layout base (GRL053)
+- Para campos originados da Base, a UI deve usar o `apelido` da coluna do layout base ativo quando existir.
+- Se o `apelido` estiver vazio/ausente, usar rótulo padrão do sistema (fallback seguro).
+- O `apelido` é **somente visual** e nunca altera:
+  - matching
+  - chave
+  - processamento
+  - persistência
+  - regras de backend
+- É obrigatório reduzir ambiguidade entre `contrato_vinculado` (chave operacional) e `contrato_interno` (contexto analítico).
 
 ## 7. Motivo do status (crítico)
 Cada linha deve exibir `motivo_status` fornecido pelo backend quando disponível.
@@ -81,6 +94,8 @@ Conteúdo mínimo do drawer:
 - dados complementar disponíveis na visão atual;
 - motivo do status;
 - contexto operacional.
+- O drawer deve usar a mesma semântica visual dos apelidos da Base.
+- Exibir explicitamente, quando disponível: contrato vinculado, contrato interno, nota fiscal, clifor, placa, data da base e chave técnica (secundária).
 
 ## 9. Fronteira com importação
 Não mostrar registros ignorados na grid de conferência.
@@ -99,3 +114,4 @@ Critérios de sucesso:
 - priorização clara;
 - investigação facilitada;
 - experiência profissional e previsível.
+- campos analíticos (clifor, data, peso, contrato interno) podem enriquecer investigação, sem alterar status.

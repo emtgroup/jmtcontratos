@@ -27,6 +27,15 @@ A lógica detalhada de decisão exibida na tela está definida no `PRD — Motor
 ### 4) Dados analíticos
 - Peso base/complementar e similares são informativos.
 - Não alteram status.
+- Clifor, contrato interno e data da base podem enriquecer investigação, sem mudar decisão.
+
+### 4.1) Nomenclatura visual da tela
+- A grid mantém estrutura fixa e previsível (não é dinâmica por layout).
+- Para campos da Base, usar `apelido` do layout base GRL053 quando existir.
+- Se não existir apelido válido, usar fallback padrão do sistema.
+- O uso de apelido é exclusivamente visual: não altera chave, matching, persistência nem regras de backend.
+- A data principal exibida na conferência deve ser a data da Base.
+- O drawer deve seguir a mesma semântica visual e explicitar contrato vinculado versus contrato interno.
 
 ### 5) Atualização da tela
 - Após importação, dados já devem refletir estado atual.
