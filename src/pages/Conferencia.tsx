@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Download, Loader2, RefreshCcw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Download, Loader2, RefreshCcw, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Drawer,
@@ -18,6 +18,7 @@ import {
   DrawerTitle,
 } from "@/components/ui/drawer";
 import { fetchLayoutBase } from "@/services/layoutBaseService";
+import { toast } from "sonner";
 
 const statusFilters: (StatusType | "todos")[] = ["todos", "vinculado", "aguardando", "divergente", "ambiguo"];
 const statusFilterLabels: Record<StatusType | "todos", string> = {
@@ -44,7 +45,7 @@ type LinhaConferencia = {
   dataBase: string | null;
   updatedAt: string | null;
 };
-type CampoDrawerBase = { id: string; label: string; valor: string };
+type CampoDrawerBase = { id: string; label: string; valor: string; tipoColunaNormalizado: string };
 
 type ContagemStatus = Record<StatusType | "todos", number>;
 type LinhaConferenciaRaw = {
@@ -147,6 +148,18 @@ export default function Conferencia() {
   const [camposExtrasDrawer, setCamposExtrasDrawer] = useState<CampoDrawerBase[]>([]);
   const [loadingCamposExtrasDrawer, setLoadingCamposExtrasDrawer] = useState(false);
 
+  // Mantém o drawer em modo leitura e adiciona apenas ação utilitária de cópia para uso externo.
+  const copiarChaveAcesso = async (valor: string) => {
+    if (!valor || valor === "—") return;
+    try {
+      await navigator.clipboard.writeText(valor);
+      toast.success("Chave copiada");
+    } catch (error) {
+      console.error("Falha ao copiar chave de acesso", error);
+      toast.error("Não foi possível copiar a chave");
+    }
+  };
+
   const carregarLabelsLayoutBase = async () => {
     try {
       const { count: ativos, error: ativosError } = await supabase
@@ -225,6 +238,7 @@ export default function Conferencia() {
             id: `${coluna.nome_coluna_excel}-${normalizaTipoColuna(coluna.tipo_coluna)}`,
             label: coluna.apelido?.trim() || coluna.nome_coluna_excel,
             valor: valorTextoBruto || "—",
+            tipoColunaNormalizado: normalizaTipoColuna(coluna.tipo_coluna),
           };
         });
 
@@ -534,9 +548,30 @@ export default function Conferencia() {
                   <div className="pt-2 border-t mt-2">
                     <p className="text-muted-foreground text-xs mb-1">Campos adicionais da Base</p>
                     {camposExtrasDrawer.map((campo) => (
-                      <p key={campo.id}>
-                        <span className="text-muted-foreground">{campo.label}:</span> {campo.valor}
-                      </p>
+                      campo.tipoColunaNormalizado === "chave_de_acesso" ? (
+                        <div key={campo.id} className="flex items-start justify-between gap-2">
+                          <p className="min-w-0">
+                            <span className="text-muted-foreground">{campo.label}:</span>{" "}
+                            <span className="break-all">{campo.valor}</span>
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() => copiarChaveAcesso(campo.valor)}
+                            aria-label="Copiar chave de acesso"
+                            title="Copiar chave de acesso"
+                            disabled={campo.valor === "—"}
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <p key={campo.id}>
+                          <span className="text-muted-foreground">{campo.label}:</span> {campo.valor}
+                        </p>
+                      )
                     ))}
                   </div>
                 )}
