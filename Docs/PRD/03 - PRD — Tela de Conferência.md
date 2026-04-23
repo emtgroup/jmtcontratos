@@ -49,7 +49,6 @@ Proibido:
 ## 6. Estrutura da tabela
 Colunas mínimas:
 - Status
-- Motivo do status
 - Contrato vinculado
 - Nota fiscal
 - Clifor
@@ -59,6 +58,7 @@ Colunas mínimas:
 - Atualizado em
 
 Regra:
+- motivo do status deixa de ser obrigatório na grid principal;
 - chave técnica não deve ser coluna principal da grid.
 - chave técnica pode existir no detalhe da linha.
 - a estrutura da grid é fixa (não é montagem dinâmica por layout).
@@ -75,15 +75,20 @@ Regra:
 - É obrigatório reduzir ambiguidade entre `contrato_vinculado` (chave operacional) e `contrato_interno` (contexto analítico).
 
 ## 7. Motivo do status (crítico)
-Cada linha deve exibir `motivo_status` fornecido pelo backend quando disponível.
+O `motivo_status` é obrigatório no drawer (detalhe da linha), com exibição read-only.
 
-Exemplos esperados:
-- `status: aguardando` + `motivo: sem_complementar`
-- `status: divergente` + `motivo: nota_diferente`
+Regras:
+- no drawer, exibir exatamente o valor retornado pelo backend para `motivo_status`;
+- quando `motivo_status` vier vazio/ausente, exibir `—`;
+- não inferir motivo no frontend.
 
-Regra de contingência:
-- se backend não fornecer `motivo_status`, usar placeholder visual explícito no frontend,
-  sem inferir vínculo/matching.
+Na grid principal:
+- a coluna pode ser omitida completamente (padrão atual), ou
+- futuramente pode exibir apenas indicador leve (tooltip ou badge), sem substituir o drawer.
+
+Diretriz de UX:
+> O motivo do status é um dado de investigação, não de leitura massiva.
+> Deve ser priorizado no drawer e não na grid principal.
 
 ## 8. Interação
 - linha da tabela deve ser clicável;
