@@ -167,6 +167,12 @@ export async function parseExcelFile(file: File, layout: LayoutResolvido): Promi
     .map((tipo) => resolved.indicePorTipo.get(tipo))
     .find((idx) => idx !== undefined);
 
+  // Aviso explícito para rastreabilidade operacional:
+  // ausência de tipo de data no layout não bloqueia a importação, mas explica data_referencia nula.
+  if (dataIdx === undefined) {
+    console.warn("[IMPORTACAO] Layout base sem campo de data mapeado");
+  }
+
   const linhas: LinhaParseada[] = [];
   for (const row of dataRows) {
     const contrato = String(row[contratoIdx] ?? "").trim();
@@ -256,6 +262,9 @@ export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPrepara
 
   onEtapa?.("lendo");
   const linhas = await parseExcelFile(file, layout);
+  const layoutTemCampoData = layout.colunas.some((col) =>
+    TIPOS_DATA_NOTA.includes(col.tipoNormalizado as (typeof TIPOS_DATA_NOTA)[number])
+  );
   if (linhas.length === 0) {
     throw new Error("Nenhuma linha operacional válida encontrada no arquivo (verifique linha de dados e colunas obrigatórias).");
   }
@@ -265,7 +274,7 @@ export async function importarBase(file: File, onEtapa?: OnEtapa, onTotalPrepara
   // O backend processa em lote no servidor; não há métrica contínua confiável para percentual em tempo real.
   onEtapa?.("processando_servidor");
   const { data, error } = await supabase.functions.invoke("importar-base", {
-    body: { nome_arquivo: file.name, linhas },
+    body: { nome_arquivo: file.name, linhas, layout_tem_data_mapeada: layoutTemCampoData },
   });
   onEtapa?.("finalizando");
 
