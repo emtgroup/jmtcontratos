@@ -1,0 +1,59 @@
+# 📘 Mini PRD — Tela de Layout do Relatório Base (GRL053)
+
+## Objetivo
+Permitir mapear colunas do GRL053 para tipos do sistema, viabilizando importação consistente da Base.
+
+## Conceito central
+Layout define significado das colunas; não define regra de negócio.
+O campo `apelido` também pode ser reutilizado como rótulo visual na tela de conferência, sem impacto em processamento.
+
+## Regras obrigatórias
+
+### 1) Chave fixa e global
+- `CHAVE = contrato_vinculado + nota_fiscal`
+- O layout não altera nem redefine essa regra.
+
+### 2) Tipagem obrigatória
+- Cada coluna deve receber um tipo.
+- Tipos estruturais obrigatórios e únicos:
+  - Contrato vinculado
+  - Nota fiscal
+- Tipos analíticos opcionais: placa, peso fiscal, data, clifor, outros.
+
+### 3) Validações de salvamento
+Bloquear salvamento se:
+- faltar tipo contrato vinculado;
+- faltar tipo nota fiscal;
+- houver mais de uma coluna para qualquer tipo estrutural obrigatório;
+- nome de coluna vazio;
+- nome de coluna duplicado.
+
+### 4) Normalização
+- A tela não normaliza dados.
+- Normalização é executada pelo backend no processamento.
+
+### 5) Participação na análise
+- Campo “participa da análise” (quando existir) é apenas informativo/visual.
+- Não altera chave, matching ou diagnóstico.
+
+## Fluxo
+1. Usuário cadastra/edita layout base.
+2. Usuário mapeia colunas para tipos.
+3. Sistema valida consistência mínima.
+4. Layout fica disponível para importação da Base.
+
+## Edge cases
+- Coluna de contrato ou nota ausente no arquivo: importação deve falhar por layout incompatível.
+- Dois mapeamentos para nota ou contrato: bloqueio na configuração.
+- Renomeação de cabeçalho no Excel sem atualizar layout: erro explícito na importação.
+
+## Proibições
+- Definir chave manualmente.
+- Usar nome de coluna como regra de negócio.
+- Salvar layout estruturalmente inválido.
+
+## Resultado esperado
+- Layout claro e sem ambiguidade.
+- Importação base apta a gerar chave global corretamente.
+- Comportamento previsível e auditável.
+- Semântica visual consistente entre configuração de layout e conferência (via apelidos, com fallback seguro).

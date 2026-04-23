@@ -1,0 +1,66 @@
+# 📘 Mini PRD — Tela de Conferência de Contratos
+
+## Objetivo
+Exibir o resultado oficial da conferência entre Base e Complementar, sem executar regra de negócio na interface.
+
+## Conceito central
+A tela não calcula. A tela lê a tabela `conferencia` e apresenta onde investigar.
+A lógica detalhada de decisão exibida na tela está definida no `PRD — Motor de Matching e Diagnóstico.md`.
+
+## Regras obrigatórias
+
+### 1) Fonte única da tela
+- Consumir exclusivamente a tabela `conferencia`.
+- Nenhuma lógica de matching/diagnóstico no frontend.
+
+### 2) Status suportados
+- ✅ Vinculado
+- ⏳ Aguardando
+- ⚠️ Contrato Divergente
+- ⚠️ Ambíguo
+
+### 3) Regra de origem
+- Origem = layout complementar responsável pelo vínculo quando houver correspondência única.
+- Em ambiguidade, origem obrigatoriamente nula.
+- Em múltiplos layouts válidos para a mesma chave, status obrigatório `ambiguo` e o sistema não prioriza layout.
+
+### 4) Dados analíticos
+- Peso base/complementar e similares são informativos.
+- Não alteram status.
+- Clifor, contrato interno e data da base podem enriquecer investigação, sem mudar decisão.
+
+### 4.1) Nomenclatura visual da tela
+- A grid mantém estrutura fixa e previsível (não é dinâmica por layout).
+- Para campos da Base, usar `apelido` do layout base GRL053 quando existir.
+- Se não existir apelido válido, usar fallback padrão do sistema.
+- O uso de apelido é exclusivamente visual: não altera chave, matching, persistência nem regras de backend.
+- A data principal exibida na conferência deve ser a data da Base.
+- O drawer deve seguir a mesma semântica visual e explicitar contrato vinculado versus contrato interno.
+
+### 5) Atualização da tela
+- Após importação, dados já devem refletir estado atual.
+- Não há botão de reprocessar.
+
+### 6) Filtros mínimos
+- Todos, Vinculados, Aguardando, Divergentes, Ambíguos.
+
+## Fluxo
+1. Usuário importa dados.
+2. Backend processa e atualiza `conferencia`.
+3. Usuário abre tela de conferência.
+4. Tela exibe resultados e filtros.
+
+## Edge cases
+- Registro antes vinculado torna-se divergente/aguardando após atualização relevante: tela deve mostrar novo status.
+- Registro ambíguo: origem deve permanecer vazia.
+- Ausência de complementar: status aguardando.
+
+## Proibições
+- Recalcular conferência no frontend.
+- Editar dados operacionais pela tela.
+- Alterar vínculo automaticamente na interface.
+
+## Resultado esperado
+- Visualização simples e confiável.
+- Diagnóstico operacional claro.
+- Zero ambiguidade sobre onde a decisão é tomada (backend).

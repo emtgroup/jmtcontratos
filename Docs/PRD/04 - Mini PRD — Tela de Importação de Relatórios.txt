@@ -1,0 +1,101 @@
+# 📘 Mini PRD — Tela de Importação de Relatórios
+
+## Objetivo
+Permitir importação de relatórios Base e Complementares com processamento determinístico, incremental, idempotente e auditável.
+
+## Conceito central
+Importar significa: ler layout, normalizar, consolidar, reprocessar chaves afetadas e atualizar conferência. Não existe processamento manual pós-importação.
+Este fluxo respeita a lógica detalhada do `PRD — Motor de Matching e Diagnóstico.md`.
+
+## Regras obrigatórias
+
+### 1) Tipos de importação
+- **Base (GRL053):** insere/atualiza base operacional, sem remoção automática.
+- **Complementar:** exige seleção de layout; só persiste dados cuja chave exista na Base.
+- Linha complementar sem chave na Base: não persiste em `registros_complementares`, não entra na conferência e é contabilizada como `ignorado_sem_base`.
+
+### 2) Chave global
+- `CHAVE = contrato_vinculado + nota_fiscal`
+- Não configurável.
+
+### 3) Normalização obrigatória
+- Contrato: regras globais do PRD principal.
+- Nota: apenas números.
+- Placa: maiúsculo, sem espaço e sem hífen.
+- Contrato/nota inválidos após normalização: erro de normalização, não persistir.
+
+### 4) Base incremental (inserir/atualizar/ignorar)
+Para cada linha válida:
+- chave inexistente: **INSERIR**
+- chave existente:
+  - diferença em campo normalizado relevante (`contrato_vinculado`, `nota_fiscal`, `placa_normalizada`): **ATUALIZAR**
+  - sem diferença: **IGNORAR**
+
+Regras críticas:
+- Não substitui a base.
+- Não remove ausentes da carga atual.
+- Reimportação do mesmo arquivo deve ser idempotente.
+
+### 5) Complementar incremental
+Para cada linha válida:
+- sem chave na Base: **IGNORAR**
+- com chave na Base:
+  - sem registro para layout: **INSERIR**
+  - com registro para layout:
+    - diferença em campo relevante: **ATUALIZAR**
+    - sem diferença: **IGNORAR**
+
+### 6) Tipos de não processamento (separação lógica)
+- `ignorado_sem_base`
+- `ignorado_sem_alteracao`
+- `erro_normalizacao`
+
+Obs.: UI pode agrupar como “ignorados”, mas o processamento deve distinguir internamente.
+Obs. adicional: deve existir detalhamento consultável desses tipos de não processamento, sem obrigar novo layout de tela nesta fase.
+
+### 7) Matching e diagnóstico após persistência
+- Ordem obrigatória: matching por chave → diagnóstico secundário por nota+placa (somente quando elegível).
+
+### 8) Reprocessamento
+- Automático após importação.
+- Reprocessar somente chaves afetadas.
+- Proibido manter status antigo após alteração.
+
+### 9) Auditoria e concorrência
+- Registrar importação com tipo, layout, arquivo, data/hora e resumo.
+- Permitir apenas 1 importação por vez.
+
+### 10) Limpeza/Nova análise
+- Não faz parte do escopo operacional fechado desta fase.
+- Se existir no produto, permanece apenas como ação explícita do usuário.
+- Detalhamento técnico depende de PRD futuro específico.
+
+## Fluxo
+1. Usuário seleciona tipo e arquivo.
+2. Sistema valida estrutura/layout.
+3. Sistema normaliza e gera chave.
+4. Sistema classifica linha (inserir/atualizar/ignorar/erro).
+5. Sistema persiste incrementalmente.
+6. Sistema executa matching e diagnóstico.
+7. Sistema atualiza conferência.
+8. Sistema grava log e mostra resumo.
+
+## Edge cases
+- Mesmo arquivo importado repetidamente: sem efeito no estado (idempotência).
+- Carga parcial: não apaga dados pré-existentes.
+- Complementar sem base correspondente: ignorar com contabilização.
+- Complementar sem base correspondente: não persistir operacionalmente.
+- Falha de normalização de contrato/nota: linha fora do processamento e com erro explícito.
+- Placa ausente/inválida: sem diagnóstico secundário.
+
+## Proibições
+- Complementar criar/alterar base.
+- Deleção automática por ausência em nova importação.
+- Diagnóstico antes do matching principal.
+- Falha silenciosa.
+
+## Resultado esperado
+- Importação previsível e rastreável.
+- Sem duplicidade.
+- Sem perda de dados por cargas parciais.
+- Conferência sempre alinhada ao último estado consolidado.
