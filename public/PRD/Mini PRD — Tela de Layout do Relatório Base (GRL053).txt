@@ -5,6 +5,7 @@ Permitir mapear colunas do GRL053 para tipos do sistema, viabilizando importaç�
 
 ## Conceito central
 Layout define significado das colunas; não define regra de negócio.
+O campo `apelido` também pode ser reutilizado como rótulo visual na tela de conferência, sem impacto em processamento.
 
 ## Regras obrigatórias
 
@@ -55,3 +56,4 @@ Bloquear salvamento se:
 - Layout claro e sem ambiguidade.
 - Importação base apta a gerar chave global corretamente.
 - Comportamento previsível e auditável.
+- Semântica visual consistente entre configuração de layout e conferência (via apelidos, com fallback seguro).
