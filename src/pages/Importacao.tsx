@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { CheckCircle, Upload, Loader2, AlertCircle, Unlock, Trash2, RefreshCcw } from "lucide-react";
 import {
   importarBase,
@@ -54,6 +55,15 @@ const ESTADO_INICIAL_CONSOLIDADO: EstadoBaseConsolidada = {
 };
 
 type OrigemResumo = "base" | "complementar";
+type StatusFeedback = "idle" | "running" | "success";
+
+const MENSAGENS_PROGRESSO = [
+  "Iniciando importação...",
+  "Lendo arquivo...",
+  "Processando registros...",
+  "Executando vínculo (matching)...",
+  "Finalizando...",
+];
 
 export default function Importacao() {
   // Resumo unificado da última ação (base ou complementar). Origem decide rótulos extras.
@@ -69,6 +79,12 @@ export default function Importacao() {
   const [etapaBase, setEtapaBase] = useState<EtapaProgresso | null>(null);
   const [totalPreparadoBase, setTotalPreparadoBase] = useState<number | null>(null);
   const [erroBase, setErroBase] = useState<string | null>(null);
+  // Feedback visual simulado para reduzir sensação de travamento durante a importação da Base.
+  const [statusFeedbackBase, setStatusFeedbackBase] = useState<StatusFeedback>("idle");
+  const [progressoBase, setProgressoBase] = useState(0);
+  const [indiceMensagemBase, setIndiceMensagemBase] = useState(0);
+  const timerProgressoBase = useRef<number | null>(null);
+  const timerMensagemBase = useRef<number | null>(null);
   const fileInputBase = useRef<HTMLInputElement>(null);
 
   // === Complementar ===
@@ -80,6 +96,12 @@ export default function Importacao() {
   const [etapaComplementar, setEtapaComplementar] = useState<EtapaProgresso | null>(null);
   const [totalPreparadoComplementar, setTotalPreparadoComplementar] = useState<number | null>(null);
   const [erroComplementar, setErroComplementar] = useState<string | null>(null);
+  // Feedback visual simulado para reduzir sensação de travamento durante a importação Complementar.
+  const [statusFeedbackComplementar, setStatusFeedbackComplementar] = useState<StatusFeedback>("idle");
+  const [progressoComplementar, setProgressoComplementar] = useState(0);
+  const [indiceMensagemComplementar, setIndiceMensagemComplementar] = useState(0);
+  const timerProgressoComplementar = useRef<number | null>(null);
+  const timerMensagemComplementar = useRef<number | null>(null);
   const fileInputComplementar = useRef<HTMLInputElement>(null);
 
   // === Outros ===
@@ -123,9 +145,98 @@ export default function Importacao() {
     void carregarLayoutsComplementares();
   }, []);
 
+  // Limpeza dos timers para evitar updates em componente desmontado.
+  useEffect(() => {
+    return () => {
+      if (timerProgressoBase.current) window.clearInterval(timerProgressoBase.current);
+      if (timerMensagemBase.current) window.clearTimeout(timerMensagemBase.current);
+      if (timerProgressoComplementar.current) window.clearInterval(timerProgressoComplementar.current);
+      if (timerMensagemComplementar.current) window.clearTimeout(timerMensagemComplementar.current);
+    };
+  }, []);
+
+  const iniciarFeedbackBase = () => {
+    setStatusFeedbackBase("running");
+    setProgressoBase(8);
+    setIndiceMensagemBase(0);
+
+    if (timerProgressoBase.current) window.clearInterval(timerProgressoBase.current);
+    timerProgressoBase.current = window.setInterval(() => {
+      setProgressoBase((atual) => {
+        if (atual >= 95) return atual;
+        if (atual < 60) return Math.min(60, atual + 8 + Math.random() * 4);
+        if (atual < 80) return Math.min(80, atual + 1.5 + Math.random() * 2);
+        return Math.min(95, atual + 0.2 + Math.random() * 0.8);
+      });
+    }, 700);
+
+    const agendarMensagem = () => {
+      timerMensagemBase.current = window.setTimeout(() => {
+        setIndiceMensagemBase((atual) => (atual + 1) % MENSAGENS_PROGRESSO.length);
+        agendarMensagem();
+      }, 2000 + Math.random() * 2000);
+    };
+    agendarMensagem();
+  };
+
+  const finalizarFeedbackBase = async () => {
+    if (timerProgressoBase.current) window.clearInterval(timerProgressoBase.current);
+    if (timerMensagemBase.current) window.clearTimeout(timerMensagemBase.current);
+    setProgressoBase(100);
+    setStatusFeedbackBase("success");
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    setStatusFeedbackBase("idle");
+  };
+  // Em caso de erro, encerramos o feedback sem transicionar por "sucesso".
+  const encerrarFeedbackBaseComErro = () => {
+    if (timerProgressoBase.current) window.clearInterval(timerProgressoBase.current);
+    if (timerMensagemBase.current) window.clearTimeout(timerMensagemBase.current);
+    setStatusFeedbackBase("idle");
+  };
+
+  const iniciarFeedbackComplementar = () => {
+    setStatusFeedbackComplementar("running");
+    setProgressoComplementar(8);
+    setIndiceMensagemComplementar(0);
+
+    if (timerProgressoComplementar.current) window.clearInterval(timerProgressoComplementar.current);
+    timerProgressoComplementar.current = window.setInterval(() => {
+      setProgressoComplementar((atual) => {
+        if (atual >= 95) return atual;
+        if (atual < 60) return Math.min(60, atual + 8 + Math.random() * 4);
+        if (atual < 80) return Math.min(80, atual + 1.5 + Math.random() * 2);
+        return Math.min(95, atual + 0.2 + Math.random() * 0.8);
+      });
+    }, 700);
+
+    const agendarMensagem = () => {
+      timerMensagemComplementar.current = window.setTimeout(() => {
+        setIndiceMensagemComplementar((atual) => (atual + 1) % MENSAGENS_PROGRESSO.length);
+        agendarMensagem();
+      }, 2000 + Math.random() * 2000);
+    };
+    agendarMensagem();
+  };
+
+  const finalizarFeedbackComplementar = async () => {
+    if (timerProgressoComplementar.current) window.clearInterval(timerProgressoComplementar.current);
+    if (timerMensagemComplementar.current) window.clearTimeout(timerMensagemComplementar.current);
+    setProgressoComplementar(100);
+    setStatusFeedbackComplementar("success");
+    await new Promise((resolve) => window.setTimeout(resolve, 1100));
+    setStatusFeedbackComplementar("idle");
+  };
+  // Em caso de erro, encerramos o feedback sem transicionar por "sucesso".
+  const encerrarFeedbackComplementarComErro = () => {
+    if (timerProgressoComplementar.current) window.clearInterval(timerProgressoComplementar.current);
+    if (timerMensagemComplementar.current) window.clearTimeout(timerMensagemComplementar.current);
+    setStatusFeedbackComplementar("idle");
+  };
+
   const handleImportBase = async () => {
     if (!arquivoBase) return;
     setImportandoBase(true);
+    iniciarFeedbackBase();
     setErroBase(null);
     setResumo(null);
     setOrigemResumo(null);
@@ -148,9 +259,13 @@ export default function Importacao() {
           `${result.vinculados} vinculados, ${result.aguardando} aguardando, ${result.divergentes} divergentes, ${result.ambiguos} ambíguos, ${result.erros} erros${extra}`,
       });
       await carregarConsolidado();
+      // Sucesso visual só deve acontecer quando o fluxo conclui sem exceção.
+      await finalizarFeedbackBase();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErroBase(msg);
+      // Em erro, removemos feedback animado sem mostrar mensagem de sucesso.
+      encerrarFeedbackBaseComErro();
       toast({ title: "Erro na importação base", description: msg, variant: "destructive" });
     } finally {
       setImportandoBase(false);
@@ -161,6 +276,7 @@ export default function Importacao() {
   const handleImportComplementar = async () => {
     if (!arquivoComplementar || !layoutComplementarId) return;
     setImportandoComplementar(true);
+    iniciarFeedbackComplementar();
     setErroComplementar(null);
     setResumo(null);
     setOrigemResumo(null);
@@ -184,9 +300,13 @@ export default function Importacao() {
           `(${semBase} sem base na linha), ${result.vinculados} vinculados, ${result.ambiguos} ambíguos.`,
       });
       await carregarConsolidado();
+      // Sucesso visual só deve acontecer quando o fluxo conclui sem exceção.
+      await finalizarFeedbackComplementar();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setErroComplementar(msg);
+      // Em erro, removemos feedback animado sem mostrar mensagem de sucesso.
+      encerrarFeedbackComplementarComErro();
       toast({ title: "Erro na importação complementar", description: msg, variant: "destructive" });
     } finally {
       setImportandoComplementar(false);
@@ -260,6 +380,26 @@ export default function Importacao() {
 
   const semLayoutsComplementares = !carregandoLayouts && layoutsComplementares.length === 0;
   const layoutComplementarSelecionado = layoutsComplementares.find((l) => l.id === layoutComplementarId);
+  // Mensagem principal unificada: prioriza etapa real, usa simulação só como fallback e estabiliza no final.
+  const mensagemPrincipalBase =
+    statusFeedbackBase === "success"
+      ? "Importação concluída com sucesso"
+      : progressoBase > 85
+        ? "Finalizando processamento..."
+        : etapaBase
+          ? LABEL_ETAPA[etapaBase]
+          : MENSAGENS_PROGRESSO[indiceMensagemBase];
+  // Para complementar, reforça a etapa de matching quando o processamento no servidor pode demorar mais.
+  const mensagemPrincipalComplementar =
+    statusFeedbackComplementar === "success"
+      ? "Importação concluída com sucesso"
+      : progressoComplementar > 85
+        ? "Finalizando processamento..."
+        : etapaComplementar === "processando_servidor"
+          ? "Executando vínculo (matching) entre base e complementar..."
+          : etapaComplementar
+            ? LABEL_ETAPA[etapaComplementar]
+            : MENSAGENS_PROGRESSO[indiceMensagemComplementar];
 
   return (
     <div>
@@ -382,25 +522,6 @@ export default function Importacao() {
               )}
             </div>
 
-            {importandoBase && etapaBase && (
-              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{LABEL_ETAPA[etapaBase]}</span>
-                </div>
-                {totalPreparadoBase !== null && (
-                  <p className="text-xs">
-                    {etapaBase === "enviando"
-                      ? `Enviando ${totalPreparadoBase.toLocaleString("pt-BR")} registros para processamento.`
-                      : etapaBase === "finalizando"
-                        ? `Finalizando importação de ${totalPreparadoBase.toLocaleString("pt-BR")} registros.`
-                        : `Processando ${totalPreparadoBase.toLocaleString("pt-BR")} registros no servidor.`}
-                  </p>
-                )}
-                <p className="text-xs">O processamento pode levar alguns segundos. Não feche esta tela.</p>
-              </div>
-            )}
-
             <Button
               className="w-full"
               onClick={handleImportBase}
@@ -414,6 +535,29 @@ export default function Importacao() {
                 "Importar Base"
               )}
             </Button>
+            {statusFeedbackBase !== "idle" && (
+              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                <div className="flex items-center gap-2">
+                  {statusFeedbackBase === "running" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 text-[hsl(var(--status-vinculado))]" />
+                  )}
+                  <span>{mensagemPrincipalBase}</span>
+                </div>
+                <Progress value={progressoBase} className="h-2" />
+                {statusFeedbackBase === "running" && (
+                  <>
+                    {totalPreparadoBase !== null && (
+                      <p className="text-xs">
+                        Processando aproximadamente {totalPreparadoBase.toLocaleString("pt-BR")} registros...
+                      </p>
+                    )}
+                    <p className="text-xs">O sistema está processando em segundo plano. Não feche esta tela.</p>
+                  </>
+                )}
+              </div>
+            )}
 
             <Button
               variant="ghost"
@@ -510,25 +654,6 @@ export default function Importacao() {
               )}
             </div>
 
-            {importandoComplementar && etapaComplementar && (
-              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>{LABEL_ETAPA[etapaComplementar]}</span>
-                </div>
-                {totalPreparadoComplementar !== null && (
-                  <p className="text-xs">
-                    {etapaComplementar === "enviando"
-                      ? `Enviando ${totalPreparadoComplementar.toLocaleString("pt-BR")} registros para processamento.`
-                      : etapaComplementar === "finalizando"
-                        ? `Finalizando importação de ${totalPreparadoComplementar.toLocaleString("pt-BR")} registros.`
-                        : `Processando ${totalPreparadoComplementar.toLocaleString("pt-BR")} registros no servidor.`}
-                  </p>
-                )}
-                <p className="text-xs">O processamento pode levar alguns segundos. Não feche esta tela.</p>
-              </div>
-            )}
-
             <Button
               className="w-full"
               onClick={handleImportComplementar}
@@ -548,6 +673,29 @@ export default function Importacao() {
                 "Importar Complementar"
               )}
             </Button>
+            {statusFeedbackComplementar !== "idle" && (
+              <div className="space-y-2 text-sm text-muted-foreground bg-muted/40 rounded-md px-3 py-2">
+                <div className="flex items-center gap-2">
+                  {statusFeedbackComplementar === "running" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <CheckCircle className="h-4 w-4 text-[hsl(var(--status-vinculado))]" />
+                  )}
+                  <span>{mensagemPrincipalComplementar}</span>
+                </div>
+                <Progress value={progressoComplementar} className="h-2" />
+                {statusFeedbackComplementar === "running" && (
+                  <>
+                    {totalPreparadoComplementar !== null && (
+                      <p className="text-xs">
+                        Processando aproximadamente {totalPreparadoComplementar.toLocaleString("pt-BR")} registros...
+                      </p>
+                    )}
+                    <p className="text-xs">O sistema está processando em segundo plano. Não feche esta tela.</p>
+                  </>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
