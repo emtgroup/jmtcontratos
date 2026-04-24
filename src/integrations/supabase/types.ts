@@ -18,18 +18,21 @@ export type Database = {
         Row: {
           chave_normalizada: string
           id: string
+          motivo_status: string | null
           origem: string | null
           status: string
         }
         Insert: {
           chave_normalizada: string
           id?: string
+          motivo_status?: string | null
           origem?: string | null
           status?: string
         }
         Update: {
           chave_normalizada?: string
           id?: string
+          motivo_status?: string | null
           origem?: string | null
           status?: string
         }
@@ -248,6 +251,7 @@ export type Database = {
           chave_normalizada: string
           contrato_vinculado: string
           dados_originais: Json
+          data_referencia: string | null
           id: string
           nota_fiscal: string
           placa_normalizada: string | null
@@ -258,6 +262,7 @@ export type Database = {
           chave_normalizada: string
           contrato_vinculado: string
           dados_originais?: Json
+          data_referencia?: string | null
           id?: string
           nota_fiscal: string
           placa_normalizada?: string | null
@@ -268,6 +273,7 @@ export type Database = {
           chave_normalizada?: string
           contrato_vinculado?: string
           dados_originais?: Json
+          data_referencia?: string | null
           id?: string
           nota_fiscal?: string
           placa_normalizada?: string | null
@@ -340,10 +346,16 @@ export type Database = {
       vw_conferencia_tela: {
         Row: {
           chave_normalizada: string | null
+          clifor: string | null
+          contrato_interno: string | null
           contrato_vinculado: string | null
+          data_referencia: string | null
           id: string | null
+          motivo_status: string | null
+          nome_cooperativa: string | null
           nota_fiscal: string | null
           origem: string | null
+          placa: string | null
           status: string | null
           updated_at: string | null
         }
