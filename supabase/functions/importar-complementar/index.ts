@@ -68,7 +68,7 @@ async function recalcularConferenciaPorChaves(
       .select("chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada")
       .in("chave_normalizada", lote);
     if (error) throw new Error(`Erro ao carregar base para conferência: ${error.message}`);
-    baseRows.push(...(data || []));
+    baseRows.push(...((data || []) as BaseRow[]));
   }
 
   const compsPorChave = new Map<string, CompRow[]>();
