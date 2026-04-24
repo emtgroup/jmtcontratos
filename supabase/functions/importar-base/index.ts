@@ -91,8 +91,9 @@ function stableJsonStringify(value: unknown): string {
   return `{${entries.join(",")}}`;
 }
 
+// deno-lint-ignore no-explicit-any
 async function recalcularConferenciaPorChaves(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   chavesAfetadas: string[],
 ) {
   if (chavesAfetadas.length === 0) return;
