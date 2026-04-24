@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Download, Loader2, RefreshCcw, ChevronLeft, ChevronRight, Copy } from "lucide-react";
+import { Search, Download, Loader2, RefreshCcw, ChevronLeft, ChevronRight, Copy, SlidersHorizontal } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Drawer,
@@ -38,6 +38,7 @@ type LinhaConferencia = {
   contratoInterno: string | null;
   nota: string;
   clifor: string | null;
+  nomeCooperativa: string | null;
   status: StatusType;
   motivoStatus: string | null;
   origem: string | null;
@@ -55,6 +56,7 @@ type LinhaConferenciaRaw = {
   contrato_interno: string | null;
   nota_fiscal: string;
   clifor: string | null;
+  nome_cooperativa: string | null;
   status: string;
   motivo_status: string | null;
   origem: string | null;
@@ -152,9 +154,30 @@ function formatarMotivoStatus(motivoStatus: string | null): string {
   return motivoStatus ?? "—";
 }
 
+function sanitizarTextoFiltro(valor: string): string {
+  // Sanitização mínima para manter filtros estáveis no PostgREST (.or/.ilike) com entrada livre de usuário.
+  // Remove caracteres de controle sintático da expressão de filtro e normaliza espaços.
+  return valor.replace(/[,\(\)"']/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function escaparPadraoLike(valor: string): string {
+  // Escape mínimo de curingas para busca literal em ILIKE.
+  return valor.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
+
 export default function Conferencia() {
   const [activeFilter, setActiveFilter] = useState<StatusType | "todos">("todos");
   const [search, setSearch] = useState("");
+  const [filtroNomeCooperativa, setFiltroNomeCooperativa] = useState("");
+  const [filtroOrigem, setFiltroOrigem] = useState("");
+  const [filtroClifor, setFiltroClifor] = useState("");
+  const [filtroNotaFiscal, setFiltroNotaFiscal] = useState("");
+  const [filtroContratoVinculado, setFiltroContratoVinculado] = useState("");
+  const [filtroPlaca, setFiltroPlaca] = useState("");
+  const [filtrosAvancadosAbertos, setFiltrosAvancadosAbertos] = useState(false);
+  const [opcoesCooperativa, setOpcoesCooperativa] = useState<string[]>([]);
+  const [opcoesOrigem, setOpcoesOrigem] = useState<string[]>([]);
+  const [opcoesFiltroParciais, setOpcoesFiltroParciais] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [records, setRecords] = useState<LinhaConferencia[]>([]);
@@ -175,6 +198,94 @@ export default function Conferencia() {
   const [colunasBaseDrawer, setColunasBaseDrawer] = useState<Array<{ nome_coluna_excel: string; apelido: string; tipo_coluna: string; exibir_no_drawer?: boolean }>>([]);
   const [camposExtrasDrawer, setCamposExtrasDrawer] = useState<CampoDrawerBase[]>([]);
   const [loadingCamposExtrasDrawer, setLoadingCamposExtrasDrawer] = useState(false);
+
+  const aplicarFiltrosServidor = (
+    queryBase: any,
+    statusSelecionado: StatusType | null,
+    incluirStatus = true,
+  ) => {
+    let query = queryBase;
+    const busca = escaparPadraoLike(sanitizarTextoFiltro(search));
+    const nomeCooperativa = escaparPadraoLike(sanitizarTextoFiltro(filtroNomeCooperativa));
+    const origem = escaparPadraoLike(sanitizarTextoFiltro(filtroOrigem));
+    const clifor = escaparPadraoLike(sanitizarTextoFiltro(filtroClifor));
+    const notaFiscal = escaparPadraoLike(sanitizarTextoFiltro(filtroNotaFiscal));
+    const contratoVinculado = escaparPadraoLike(sanitizarTextoFiltro(filtroContratoVinculado));
+    const placa = escaparPadraoLike(sanitizarTextoFiltro(filtroPlaca));
+
+    if (incluirStatus && statusSelecionado) query = query.eq("status", statusSelecionado);
+    if (busca) {
+      query = query.or(`contrato_vinculado.ilike.%${busca}%,nota_fiscal.ilike.%${busca}%,clifor.ilike.%${busca}%,nome_cooperativa.ilike.%${busca}%`);
+    }
+
+    if (nomeCooperativa) query = query.ilike("nome_cooperativa", `%${nomeCooperativa}%`);
+    if (origem) query = query.ilike("origem", `%${origem}%`);
+    if (clifor) query = query.ilike("clifor", `%${clifor}%`);
+    if (notaFiscal) query = query.ilike("nota_fiscal", `%${notaFiscal}%`);
+    if (contratoVinculado) query = query.ilike("contrato_vinculado", `%${contratoVinculado}%`);
+    if (placa) query = query.ilike("placa", `%${placa}%`);
+
+    return query;
+  };
+
+  const carregarOpcoesFiltros = async () => {
+    try {
+      // Paginação leve para evitar corte silencioso de opções quando houver mais de 5000 registros.
+      // Mantemos limite de segurança para não ampliar carga de forma descontrolada.
+      const lotes: Array<{ nome_cooperativa?: string | null; origem?: string | null }> = [];
+      const pageSize = 1000;
+      const limiteSeguranca = 20000;
+      let atingiuLimiteSeguranca = true;
+      for (let inicio = 0; inicio < limiteSeguranca; inicio += pageSize) {
+        const fim = inicio + pageSize - 1;
+        const { data, error } = await supabase
+          .from("vw_conferencia_tela" as never)
+          .select("nome_cooperativa, origem")
+          .range(inicio, fim);
+        if (error) throw new Error(`Erro ao carregar opções de filtros: ${error.message}`);
+        if (!data || data.length === 0) {
+          atingiuLimiteSeguranca = false;
+          break;
+        }
+        lotes.push(...data);
+        if (data.length < pageSize) {
+          atingiuLimiteSeguranca = false;
+          break;
+        }
+      }
+
+      const cooperativas = [...new Set((lotes || [])
+        .map((row: { nome_cooperativa?: string | null }) => row.nome_cooperativa?.trim())
+        .filter((valor): valor is string => Boolean(valor)))].sort((a, b) => a.localeCompare(b));
+
+      const origens = [...new Set((lotes || [])
+        .map((row: { origem?: string | null }) => row.origem?.trim())
+        .filter((valor): valor is string => Boolean(valor)))].sort((a, b) => a.localeCompare(b));
+
+      // Se o limite de segurança for atingido, evitamos Select parcial (que poderia ocultar opções)
+      // e voltamos para input textual livre, mantendo a busca principal 100% server-side.
+      setOpcoesFiltroParciais(atingiuLimiteSeguranca);
+      setOpcoesCooperativa(cooperativas);
+      setOpcoesOrigem(origens);
+    } catch (e) {
+      console.error("Falha ao carregar opções dos filtros da conferência", e);
+      setOpcoesFiltroParciais(false);
+      setOpcoesCooperativa([]);
+      setOpcoesOrigem([]);
+    }
+  };
+
+  const limparFiltros = () => {
+    setSearch("");
+    setActiveFilter("todos");
+    setFiltroNomeCooperativa("");
+    setFiltroOrigem("");
+    setFiltroClifor("");
+    setFiltroNotaFiscal("");
+    setFiltroContratoVinculado("");
+    setFiltroPlaca("");
+    setPage(1);
+  };
 
   // Mantém o drawer em modo leitura e adiciona apenas ação utilitária de cópia para uso externo.
   const copiarChaveAcesso = async (valor: string) => {
@@ -292,14 +403,11 @@ export default function Conferencia() {
       // Não existe join no frontend para evitar decisão semântica fora da camada de processamento.
       let query = supabase
         .from("vw_conferencia_tela" as never)
-        .select("id, chave_normalizada, contrato_vinculado, contrato_interno, nota_fiscal, clifor, status, motivo_status, origem, placa, data_referencia, updated_at", { count: "exact" })
+        .select("id, chave_normalizada, contrato_vinculado, contrato_interno, nota_fiscal, clifor, nome_cooperativa, status, motivo_status, origem, placa, data_referencia, updated_at", { count: "exact" })
         .order("updated_at", { ascending: false })
         .range(inicio, fim);
 
-      if (statusSelecionado) query = query.eq("status", statusSelecionado);
-      if (search.trim()) {
-        query = query.or(`contrato_vinculado.ilike.%${search.trim()}%,nota_fiscal.ilike.%${search.trim()}%,clifor.ilike.%${search.trim()}%`);
-      }
+      query = aplicarFiltrosServidor(query, statusSelecionado, true);
 
       const { data, error, count } = await query;
       if (error) throw new Error(`Erro ao carregar conferência: ${error.message}`);
@@ -311,6 +419,7 @@ export default function Conferencia() {
         contratoInterno: row.contrato_interno ?? null,
         nota: row.nota_fiscal,
         clifor: row.clifor ?? null,
+        nomeCooperativa: row.nome_cooperativa ?? null,
         status: validarStatus(row.status, row.chave_normalizada),
         motivoStatus: row.motivo_status ?? null,
         origem: row.origem,
@@ -324,7 +433,6 @@ export default function Conferencia() {
       setTotalRows(count ?? 0);
 
       // KPIs e badges usam o mesmo universo da listagem (busca aplicada; status separado por grupo).
-      const filtrosBusca = search.trim();
       const contagensParciais: ContagemStatus = {
         todos: 0,
         vinculado: 0,
@@ -338,8 +446,7 @@ export default function Conferencia() {
           .from("vw_conferencia_tela" as never)
           .select("id", { count: "exact", head: true });
 
-        if (status) cQuery = cQuery.eq("status", status);
-        if (filtrosBusca) cQuery = cQuery.or(`contrato_vinculado.ilike.%${filtrosBusca}%,nota_fiscal.ilike.%${filtrosBusca}%,clifor.ilike.%${filtrosBusca}%`);
+        cQuery = aplicarFiltrosServidor(cQuery, status ?? null, Boolean(status));
 
         const { count: c, error: e } = await cQuery;
         if (e) throw new Error(`Erro ao contar conferência${status ? ` (${status})` : ""}: ${e.message}`);
@@ -374,11 +481,23 @@ export default function Conferencia() {
 
   useEffect(() => {
     void carregarLabelsLayoutBase();
+    void carregarOpcoesFiltros();
   }, []);
 
   useEffect(() => {
     void carregarConferencia();
-  }, [activeFilter, page, pageSize, search]);
+  }, [
+    activeFilter,
+    page,
+    pageSize,
+    search,
+    filtroNomeCooperativa,
+    filtroOrigem,
+    filtroClifor,
+    filtroNotaFiscal,
+    filtroContratoVinculado,
+    filtroPlaca,
+  ]);
 
   const totalPaginas = useMemo(() => Math.max(1, Math.ceil(totalRows / pageSize)), [totalRows, pageSize]);
   const exibindoDe = totalRows === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -417,7 +536,7 @@ export default function Conferencia() {
         <Card><CardContent className="py-3"><p className="text-xs text-muted-foreground">Ambíguos</p><p className="text-xl font-semibold">{contagens.ambiguo}</p></CardContent></Card>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -431,6 +550,85 @@ export default function Conferencia() {
             }}
           />
         </div>
+        <div className="w-[220px]">
+          {opcoesCooperativa.length > 0 && !opcoesFiltroParciais ? (
+            <Select
+              value={filtroNomeCooperativa || "__todas__"}
+              onValueChange={(value) => {
+                setFiltroNomeCooperativa(value === "__todas__" ? "" : value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Nome cooperativa" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__todas__">Todas cooperativas</SelectItem>
+                {opcoesCooperativa.map((cooperativa) => (
+                  <SelectItem key={cooperativa} value={cooperativa}>
+                    {cooperativa}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              placeholder="Nome cooperativa..."
+              value={filtroNomeCooperativa}
+              onChange={(e) => {
+                setFiltroNomeCooperativa(e.target.value);
+                setPage(1);
+              }}
+            />
+          )}
+        </div>
+        <div className="w-[220px]">
+          {opcoesOrigem.length > 0 && !opcoesFiltroParciais ? (
+            <Select
+              value={filtroOrigem || "__todas__"}
+              onValueChange={(value) => {
+                setFiltroOrigem(value === "__todas__" ? "" : value);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Origem" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__todas__">Todas origens</SelectItem>
+                {opcoesOrigem.map((origem) => (
+                  <SelectItem key={origem} value={origem}>
+                    {origem}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              placeholder="Origem..."
+              value={filtroOrigem}
+              onChange={(e) => {
+                setFiltroOrigem(e.target.value);
+                setPage(1);
+              }}
+            />
+          )}
+        </div>
+        {opcoesFiltroParciais && (
+          <p className="text-xs text-muted-foreground">
+            Lista parcial de opções detectada. Use busca textual para cooperativa/origem.
+          </p>
+        )}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setFiltrosAvancadosAbertos((prev) => !prev)}
+          className="inline-flex items-center gap-1"
+        >
+          <SlidersHorizontal className="h-4 w-4" />
+          Filtros avançados
+        </Button>
         <div className="flex gap-1.5 flex-wrap">
           {statusFilters.map((s) => (
             <Button
@@ -466,6 +664,51 @@ export default function Conferencia() {
           </Select>
         </div>
       </div>
+      {filtrosAvancadosAbertos && (
+        <Card className="mb-4 border-dashed">
+          <CardContent className="py-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2.5">
+              <Input
+                placeholder="Clifor..."
+                value={filtroClifor}
+                onChange={(e) => {
+                  setFiltroClifor(e.target.value);
+                  setPage(1);
+                }}
+              />
+              <Input
+                placeholder="Nota fiscal..."
+                value={filtroNotaFiscal}
+                onChange={(e) => {
+                  setFiltroNotaFiscal(e.target.value);
+                  setPage(1);
+                }}
+              />
+              <Input
+                placeholder="Contrato vinculado..."
+                value={filtroContratoVinculado}
+                onChange={(e) => {
+                  setFiltroContratoVinculado(e.target.value);
+                  setPage(1);
+                }}
+              />
+              <Input
+                placeholder="Placa..."
+                value={filtroPlaca}
+                onChange={(e) => {
+                  setFiltroPlaca(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+            <div className="flex justify-end pt-3">
+              <Button type="button" variant="ghost" size="sm" onClick={limparFiltros}>
+                Limpar filtros
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {erro && (
         <Card className="mb-4 border-l-4 border-l-[hsl(var(--status-divergente))]">
@@ -489,13 +732,15 @@ export default function Conferencia() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          <div className="overflow-x-auto">
+            <Table className="min-w-[1080px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Status</TableHead>
                 <TableHead>{labels.contrato_vinculado}</TableHead>
                 <TableHead>{labels.nota_fiscal}</TableHead>
                 <TableHead>{labels.clifor}</TableHead>
+                <TableHead>Nome cooperativa</TableHead>
                 <TableHead>Origem</TableHead>
                 <TableHead>{labels.placa}</TableHead>
                 <TableHead>{labels.data_da_nota}</TableHead>
@@ -505,7 +750,7 @@ export default function Conferencia() {
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     <span className="inline-flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" />Carregando registros...</span>
                   </TableCell>
                 </TableRow>
@@ -517,10 +762,11 @@ export default function Conferencia() {
                       Exibir indicador visual de motivo_status na grid (tooltip ou badge)
                       somente quando backend passar valores consistentes
                       NÃO implementar agora */}
-                  <TableCell className="font-medium">{r.contratoVinculado}</TableCell>
-                  <TableCell>{r.nota}</TableCell>
-                  <TableCell>{r.clifor ?? "—"}</TableCell>
-                  <TableCell>{r.origem ?? "—"}</TableCell>
+                  <TableCell className="font-medium max-w-[180px] truncate" title={r.contratoVinculado}>{r.contratoVinculado}</TableCell>
+                  <TableCell className="max-w-[130px] truncate" title={r.nota}>{r.nota}</TableCell>
+                  <TableCell className="max-w-[220px] truncate" title={r.clifor ?? "—"}>{r.clifor ?? "—"}</TableCell>
+                  <TableCell className="max-w-[220px] truncate" title={r.nomeCooperativa ?? "—"}>{r.nomeCooperativa ?? "—"}</TableCell>
+                  <TableCell className="max-w-[180px] truncate" title={r.origem ?? "—"}>{r.origem ?? "—"}</TableCell>
                   <TableCell>{r.placa ?? "—"}</TableCell>
                   <TableCell>{formatarDataEmissao(r.dataBase)}</TableCell>
                   <TableCell>{formatarDataHora(r.updatedAt)}</TableCell>
@@ -528,11 +774,12 @@ export default function Conferencia() {
               ))}
               {!loading && records.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell>
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">Nenhum registro encontrado</TableCell>
                 </TableRow>
               )}
             </TableBody>
-          </Table>
+            </Table>
+          </div>
 
           <div className="flex items-center justify-end gap-2 p-3 border-t">
             <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1 || loading}>
