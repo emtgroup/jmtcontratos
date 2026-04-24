@@ -117,7 +117,7 @@ async function recalcularConferenciaPorChaves(
       .select("id, nome")
       .in("id", [...idsLayouts]);
     if (error) throw new Error(`Erro ao carregar nomes de layouts: ${error.message}`);
-    for (const row of data || []) nomePorLayout.set(row.id, row.nome);
+    for (const row of (data || []) as Array<{ id: string; nome: string }>) nomePorLayout.set(row.id, row.nome);
   }
 
   const upserts: Array<{
