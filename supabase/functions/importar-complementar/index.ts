@@ -40,8 +40,9 @@ function placaElegivel(placa: string | null): boolean {
   return !!placa && placa.trim().length > 0;
 }
 
+// deno-lint-ignore no-explicit-any
 async function recalcularConferenciaPorChaves(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   chavesAfetadas: string[],
 ) {
   if (chavesAfetadas.length === 0) return;
