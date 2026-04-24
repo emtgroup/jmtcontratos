@@ -40,8 +40,9 @@ function placaElegivel(placa: string | null): boolean {
   return !!placa && placa.trim().length > 0;
 }
 
+// deno-lint-ignore no-explicit-any
 async function recalcularConferenciaPorChaves(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   chavesAfetadas: string[],
 ) {
   if (chavesAfetadas.length === 0) return;
@@ -67,7 +68,7 @@ async function recalcularConferenciaPorChaves(
       .select("chave_normalizada, contrato_vinculado, nota_fiscal, placa_normalizada")
       .in("chave_normalizada", lote);
     if (error) throw new Error(`Erro ao carregar base para conferência: ${error.message}`);
-    baseRows.push(...(data || []));
+    baseRows.push(...((data || []) as BaseRow[]));
   }
 
   const compsPorChave = new Map<string, CompRow[]>();
@@ -116,7 +117,7 @@ async function recalcularConferenciaPorChaves(
       .select("id, nome")
       .in("id", [...idsLayouts]);
     if (error) throw new Error(`Erro ao carregar nomes de layouts: ${error.message}`);
-    for (const row of data || []) nomePorLayout.set(row.id, row.nome);
+    for (const row of (data || []) as Array<{ id: string; nome: string }>) nomePorLayout.set(row.id, row.nome);
   }
 
   const upserts: Array<{
