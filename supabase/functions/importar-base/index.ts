@@ -263,6 +263,30 @@ async function recalcularConferenciaPorChaves(
 }
 
 // Quebra array em chunks
+
+// Garante cobertura integral da conferência: toda chave válida da Base precisa existir na materialização,
+// incluindo registros sem complementar (status aguardando), conforme PRD operacional.
+// Reprocessamento segue incremental, mas inclui eventual backfill de lacunas históricas de forma idempotente.
+// deno-lint-ignore no-explicit-any
+async function expandirChavesComBackfillBaseSemConferencia(supabase: any, chavesAfetadas: string[]): Promise<string[]> {
+  const { data: baseRows, error: baseErr } = await supabase
+    .from("registros_base")
+    .select("chave_normalizada");
+  if (baseErr) throw new Error(`Erro ao carregar chaves da base para cobertura da conferência: ${baseErr.message}`);
+
+  const { data: confRows, error: confErr } = await supabase
+    .from("conferencia")
+    .select("chave_normalizada");
+  if (confErr) throw new Error(`Erro ao carregar chaves da conferência para cobertura da conferência: ${confErr.message}`);
+
+  const chavesConferencia = new Set((confRows || []).map((r: { chave_normalizada: string }) => r.chave_normalizada));
+  const chavesFaltantes = (baseRows || [])
+    .map((r: { chave_normalizada: string }) => r.chave_normalizada)
+    .filter((chave: string) => !!chave && !chavesConferencia.has(chave));
+
+  return [...new Set([...chavesAfetadas, ...chavesFaltantes].filter(Boolean))];
+}
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -546,9 +570,10 @@ Deno.serve(async (req) => {
       ].filter(Boolean)),
     ];
 
-    if (chavesAfetadas.length > 0) {
+    const chavesParaRecalcular = await expandirChavesComBackfillBaseSemConferencia(supabase, chavesAfetadas);
+    if (chavesParaRecalcular.length > 0) {
       await atualizarProgresso({ etapa_atual: "atualizando_conferencia", inseridos, atualizados, ignorados, erros, force: true });
-      await recalcularConferenciaPorChaves(supabase, chavesAfetadas);
+      await recalcularConferenciaPorChaves(supabase, chavesParaRecalcular);
     }
 
     // Resumo de status da conferência para as chaves processadas nesta importação.
