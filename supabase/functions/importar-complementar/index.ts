@@ -209,6 +209,30 @@ async function recalcularConferenciaPorChaves(
   }
 }
 
+
+// Garante cobertura integral da conferência: toda chave válida da Base precisa existir na materialização,
+// incluindo registros sem complementar (status aguardando), conforme PRD operacional.
+// Reprocessamento segue incremental, mas inclui eventual backfill de lacunas históricas de forma idempotente.
+// deno-lint-ignore no-explicit-any
+async function expandirChavesComBackfillBaseSemConferencia(supabase: any, chavesAfetadas: string[]): Promise<string[]> {
+  const { data: baseRows, error: baseErr } = await supabase
+    .from("registros_base")
+    .select("chave_normalizada");
+  if (baseErr) throw new Error(`Erro ao carregar chaves da base para cobertura da conferência: ${baseErr.message}`);
+
+  const { data: confRows, error: confErr } = await supabase
+    .from("conferencia")
+    .select("chave_normalizada");
+  if (confErr) throw new Error(`Erro ao carregar chaves da conferência para cobertura da conferência: ${confErr.message}`);
+
+  const chavesConferencia = new Set((confRows || []).map((r: { chave_normalizada: string }) => r.chave_normalizada));
+  const chavesFaltantes = (baseRows || [])
+    .map((r: { chave_normalizada: string }) => r.chave_normalizada)
+    .filter((chave: string) => !!chave && !chavesConferencia.has(chave));
+
+  return [...new Set([...chavesAfetadas, ...chavesFaltantes].filter(Boolean))];
+}
+
 function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
@@ -429,14 +453,15 @@ Deno.serve(async (req) => {
     // RECÁLCULO DA CONFERÊNCIA COM MATCH PRINCIPAL + DIAGNÓSTICO
     // O backend materializa status e motivo_status para leitura direta no frontend.
     // ============================================================
-    const chavesAfetadas = chavesValidas; // só recalcula chaves do arquivo atual que existem na base
-    await recalcularConferenciaPorChaves(supabase, chavesAfetadas);
+    const chavesAfetadas = chavesValidas; // mantém reprocessamento incremental das chaves afetadas no arquivo atual
+    const chavesParaRecalcular = await expandirChavesComBackfillBaseSemConferencia(supabase, chavesAfetadas);
+    await recalcularConferenciaPorChaves(supabase, chavesParaRecalcular);
 
     let vinculados = 0;
     let aguardando = 0;
     let divergentes = 0;
     let ambiguos = 0;
-    for (const chunkChaves of chunk(chavesAfetadas, 500)) {
+    for (const chunkChaves of chunk(chavesParaRecalcular, 500)) {
       const { data: confRows, error: confSelErr } = await supabase
         .from("conferencia")
         .select("status")
